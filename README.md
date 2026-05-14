@@ -9,6 +9,7 @@ I'm a postdoc at the [Zurich Center for Neuroeconomics](https://www.econ.uzh.ch/
 | Skill | What it does |
 | --- | --- |
 | [`scientific-figures`](./skills/scientific-figures/) | Publication-quality scientific figures in a restrained, vision-science-inflected house style. Seaborn-on-matplotlib, Helvetica, despined and offset, in-panel annotations, PyMC/`bauer` posterior plotting with HDI credible intervals. |
+| [`sciencecluster`](./skills/sciencecluster/) | UZH sciencecluster SLURM operational knowledge — submitting jobs, conda activation in SLURM context, GPU constraints (`--gres`, L4/V100/A100, cuInit-race stagger), `~/logs/` convention, common failure modes (`ArrayTaskThrottle` for NFS dogpile, `DependencyNeverSatisfied` zombies, walltime priority), and cluster-vs-local code paths. Ships with copy-pasteable SLURM templates in [`references/`](./skills/sciencecluster/references/): CPU array, GPU array, and an `afterok` chain orchestrator. |
 
 More to come — likely candidates include conventions for hierarchical Bayesian modelling with [`bauer`](https://github.com/Gilles86/bauer), nPRF figures from [`braincoder`](https://github.com/Gilles86/braincoder), grant-writing voice, and citation style.
 

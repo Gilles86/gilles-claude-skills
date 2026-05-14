@@ -10,6 +10,16 @@ config (SLURM account name, login alias, conda paths, project-specific
 env names) lives in the user's private global config — this skill
 uses placeholders like `<account>` and `<env>` where applicable.
 
+**Templates:** copy-pasteable SLURM scaffolding lives in
+`references/`:
+
+- `array_cpu_template.sh` — CPU array job (stagger + logging + conda activation)
+- `array_gpu_template.sh` — same, plus `--gres=gpu:1`, GPU constraint, cuInit-race defense
+- `submit_chain.sh` — orchestrator that wires per-subject `afterok` chains
+
+Treat these as starting points; edit the placeholders (`<account>`,
+`<env>`, `<path-to-miniforge>`) before submitting.
+
 The cluster login is typically reached via an SSH alias the user
 sets up (`ssh sciencecluster`). Jobs run via SLURM; you cannot run
 compute on the login node. Always `git pull` before submitting jobs.
