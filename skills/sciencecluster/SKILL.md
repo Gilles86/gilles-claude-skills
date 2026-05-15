@@ -340,6 +340,52 @@ quick `sbatch --time=00:10:00` job. Only pure stat queries
 (`squeue`, `sacct`, `ls`, `wc -l`, `head`, `git pull`) belong on the
 login node.
 
+## Split aggregation from plotting: do summaries on the cluster, plots locally
+
+Once you've decided that something belongs *off* the login node (per the
+section above), there's a further split worth making for analysis scripts
+that end in a figure:
+
+- **Aggregation step** — reads many small files (per-(unit, condition)
+  fits, per-trial outputs, BIDS-wide event TSVs) and reduces them to one
+  summary table. Keep this on the cluster: `srun -c 2 --mem 8G --time 5`
+  is usually plenty. Write the output as a single TSV/CSV/NPZ that fits in
+  a few MB.
+
+- **Plotting / stats step** — reads that one summary file, makes the
+  figure. Run it **locally**: `rsync` the summary file, then run the
+  matplotlib/seaborn script on the laptop. Local iteration is faster
+  (no `srun` queue wait, no module-load overhead, no `--mem` to size,
+  no SSH round-trip per re-render), and the PDF opens in Preview the
+  moment it's written.
+
+```bash
+# REMOTE: aggregate the many fit outputs into one summary TSV
+ssh <cluster-alias> 'cd ~/git/<project> && \
+    srun -A <account> -c 2 --mem 8G --time 5 \
+    <conda-envs-dir>/<env>/bin/python -m <project>.aggregate \
+    --fits-dir <remote-results-dir> \
+    --summary-tsv notes/data/<analysis>_summary.tsv'
+
+# LOCAL: pull the summary, plot from it
+rsync <cluster-alias>:~/git/<project>/notes/data/<analysis>_summary.tsv \
+    ~/git/<project>/notes/data/
+~/mambaforge/envs/<env>/bin/python -m <project>.plot_<analysis> \
+    --tsv notes/data/<analysis>_summary.tsv \
+    --out notes/figures/<analysis>.pdf
+```
+
+**Heuristic:** if the script's bottleneck is `glob + read N files + agg`,
+keep it remote. If the bottleneck is `pd.read_csv(one_file) +
+matplotlib`, move it local. The dividing line is roughly **a few MB of
+input data**: above that you pay VPN/rsync time and login-node load;
+below that local is dominated by faster iteration.
+
+**Exception** — if the plotting script *also* loads cluster-only data
+beyond the summary (ROI atlas NIfTIs for overlays, anatomical images),
+keeping it cluster-side may make sense. But for the common case of
+"read TSV → seaborn → PDF", running locally wins every time.
+
 ## Sync code to the cluster via git, NOT rsync
 
 When new code (fit scripts, analysis modules, SLURM wrappers) needs
