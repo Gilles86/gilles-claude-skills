@@ -1,0 +1,46 @@
+# CUDA conda environment for cluster GPU jobs (PRF fits, decoding).
+# Build on a GPU compute node so the right CUDA toolchain is visible:
+#
+#   sbatch create_env/create_gpu_env.sh
+#
+# Installed env name on cluster: <project>_cuda
+
+name: <project>_cuda
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.11
+  - pip
+
+  # Scientific Python core
+  - numpy
+  - scipy
+  - pandas
+  - matplotlib
+  - seaborn
+  - scikit-learn
+  - tqdm
+  - pyyaml
+
+  # Neuroimaging
+  - nibabel
+  - nilearn
+  - pybids
+
+  # CUDA toolchain — pinned to match the cluster's `module load cuda/12.6.3`
+  # Adjust if cluster default changes.
+  - cudatoolkit=12.6
+  - cudnn
+
+  - pip:
+      # GPU TensorFlow — version must match braincoder's keras-backend branch
+      - "tensorflow[and-cuda]==2.14.*"
+      - "tensorflow-probability==0.22.*"
+
+      # In-house libs (encoding model backend)
+      - "braincoder @ git+https://github.com/Gilles86/braincoder.git@keras-backend"
+
+      # Optional: JAX with CUDA, if any analyses need it
+      # - "jax[cuda12_pip]"

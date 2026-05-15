@@ -1,0 +1,54 @@
+# CPU conda environment for local Linux dev and cluster CPU jobs.
+# On Apple Silicon, use the top-level environment_apple_silicon.yml instead.
+#
+# Build:
+#   conda env create -f create_env/environment_cpu.yml
+#   conda activate <project>
+#   pip install -e .         # installs the project package itself
+#
+# On the cluster:
+#   sbatch create_env/create_cpu_env.sh
+
+name: <project>
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.11
+  - pip
+
+  # Scientific Python core
+  - numpy
+  - scipy
+  - pandas
+  - matplotlib
+  - seaborn
+  - scikit-learn
+  - statsmodels
+  - tqdm
+  - pyyaml
+
+  # Neuroimaging
+  - nibabel
+  - nilearn
+  - pybids
+  - nipype
+
+  # Notebook + dev
+  - jupyter
+  - ipykernel
+  - pytest
+
+  # TensorFlow CPU (encoding-model fits use it; CPU is fine for dev iteration)
+  - tensorflow=2.14
+  - tensorflow-probability=0.22
+
+  - pip:
+      # In-house libs pinned to git URL. Don't rely on libs/ being on sys.path.
+      - "braincoder @ git+https://github.com/Gilles86/braincoder.git@main"
+      # - "bauer @ git+https://github.com/Gilles86/bauer.git@main"
+      # - "exptools2 @ git+https://github.com/VU-Cog-Sci/exptools2.git@master"
+
+      # GLMsingle (if used)
+      - "glmsingle @ git+https://github.com/cvnlab/GLMsingle.git@main"

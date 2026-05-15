@@ -1,0 +1,56 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+.pytest_cache/
+
+# --- Editors / OS ---
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+.ipynb_checkpoints/
+
+# --- Conda / pip ---
+.conda/
+pip-wheel-metadata/
+
+# --- Notebook outputs (review before committing) ---
+# Uncomment to strip notebook outputs from version control:
+# *.ipynb_checkpoints/
+# Or use nbstripout: `nbstripout --install`
+
+# --- SLURM / cluster artifacts ---
+logs/
+*.log
+slurm-*.out
+
+# --- Data: never commit raw or BIDS derivatives ---
+sourcedata/
+# derivatives/  # ONLY if your project does NOT use a small project-root
+                # derivatives/ for version-controlled output TSVs.
+                # If it does (retsupp pattern), keep this commented and
+                # add finer-grained rules below.
+
+# Project-root derivatives/: ignore heavy formats, keep TSVs/CSVs/PDFs
+derivatives/**/*.nii.gz
+derivatives/**/*.h5
+derivatives/**/*.npy
+derivatives/**/*.npz
+!derivatives/**/*.tsv
+!derivatives/**/*.csv
+!derivatives/**/*.json
+
+# --- notes/figures: keep paper figures, ignore scratch ---
+notes/figures/_scratch/
+notes/figures/**/_*.pdf
+
+# --- Secrets / tokens ---
+.env
+*.key
+credentials.json

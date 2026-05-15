@@ -10,8 +10,9 @@ I'm a postdoc at the [Zurich Center for Neuroeconomics](https://www.econ.uzh.ch/
 | --- | --- |
 | [`scientific-figures`](./skills/scientific-figures/) | Publication-quality scientific figures in a restrained, vision-science-inflected house style. Seaborn-on-matplotlib, Helvetica, despined and offset, in-panel annotations, PyMC/`bauer` posterior plotting with HDI credible intervals. |
 | [`sciencecluster`](./skills/sciencecluster/) | UZH sciencecluster SLURM operational knowledge — submitting jobs, conda activation in SLURM context, GPU constraints (`--gres`, L4/V100/A100, cuInit-race stagger), `~/logs/` convention, common failure modes (`ArrayTaskThrottle` for NFS dogpile, `DependencyNeverSatisfied` zombies, walltime priority), and cluster-vs-local code paths. Ships with copy-pasteable SLURM templates in [`references/`](./skills/sciencecluster/references/): CPU array, GPU array, and an `afterok` chain orchestrator. |
+| [`cogneuro-project`](./skills/cogneuro-project/) | House style for organizing cognitive-neuroscience fMRI projects — flat-package layout, `Subject` class as single source of truth (with NIfTI dtype guard against the uint8 `scl_slope` trap), pipeline-stage submodules (`prepare/`, `glm/`, `modeling/`, `behavior/`, ...), co-located SLURM wrappers, multi-env conda (`create_env/`), `notes/` markdown discipline, and conventions for using the in-house [`braincoder`](https://github.com/Gilles86/braincoder) (PRF/encoding) and [`bauer`](https://github.com/Gilles86/bauer) (Bayesian behavioral) libraries. Ships with copy-pasteable templates in [`references/`](./skills/cogneuro-project/references/): `Subject` skeleton, `CLAUDE.md` template, conda envs, CLI script, orchestrator, and worked braincoder/bauer fit examples. |
 
-More to come — likely candidates include conventions for hierarchical Bayesian modelling with [`bauer`](https://github.com/Gilles86/bauer), nPRF figures from [`braincoder`](https://github.com/Gilles86/braincoder), grant-writing voice, and citation style.
+More to come — likely candidates include grant-writing voice and citation style.
 
 ## Installing
 

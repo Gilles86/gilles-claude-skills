@@ -1,0 +1,162 @@
+# <PROJECT> — developer guide
+
+> 7T fMRI study of <topic>; N=<N> subjects, paradigm <X>.
+> Targeting <venue/paper>.
+
+## Paths
+
+| Where | Path |
+|-------|------|
+| Local BIDS root | `/data/ds-<project>` |
+| Cluster BIDS root | `/shares/zne.uzh/gdehol/ds-<project>` |
+| Sourcedata (DICOMs) | `/shares/zne.uzh/gdehol/raw_<project>/` |
+| Repo (cluster) | `~/git/<project>/` |
+
+Derivatives subdirs (relative to BIDS root):
+- `derivatives/fmriprep/` — fMRIprep output
+- `derivatives/glmsingle/` — single-trial betas
+- `derivatives/encoding_model[.cv][.smoothed]/` — PRF/encoding fits
+- `derivatives/extracted_pars/` — TSV cache for fast plotting
+- `derivatives/masks/` — ROI masks (T1w + EPI space)
+- `derivatives/cleaned/` — confound-regressed BOLD
+
+## Subject naming
+
+- `sub-01` … `sub-NN` — study participants (zero-padded, integer IDs)
+- `sub-pil01`, `sub-pil02` — fMRI pilots (protocol validation; not in
+  group analyses unless explicitly stated)
+
+**Subject quirks** — encapsulated in `Subject` class
+(`<package>/utils/data.py`); never branch on subject ID inside analysis
+scripts.
+
+| Subject | Quirk |
+|---------|-------|
+| `sub-01`, `sub-02` | Different sourcedata layout (early protocol) |
+| `sub-06` ses-2 run-5 | First TR pulse missing — onset offset applied |
+| `sub-17` | 3 sessions; ses-1 run-5 excluded (scanner abort) |
+
+## Environments
+
+Three conda environments. See `create_env/`:
+
+- `<project>` — CPU (local Linux + cluster CPU)
+- `<project>_cuda` — GPU (cluster GPU jobs)
+- `<project>` (apple-silicon variant) — local mac dev (top-level
+  `environment_apple_silicon.yml`)
+
+Build cluster envs via sbatch (need GPU node for CUDA env):
+
+```bash
+sbatch create_env/create_cpu_env.sh
+sbatch create_env/create_gpu_env.sh
+```
+
+After env is built: `pip install -e .` inside the env.
+
+## Pipeline (in order)
+
+1. **DICOM → BIDS** — `<package>/prepare/convert_raw_mri_data.py`
+2. **NORDIC denoising** (7T) — `<package>/nordic/run_nordic.m`,
+   submitted via `<package>/nordic/slurm_jobs/submit_nordic_job.sh`
+3. **fMRIprep** — `<package>/cluster_preproc/fmriprep.sh`
+   (Apptainer wrapper; outputs T1w + fsnative)
+4. **Cleaning** — `<package>/preprocess/clean.py` (confound regression,
+   motion-outlier interpolation → `derivatives/cleaned/`)
+5. **GLMsingle single-trial betas** — `<package>/glm/fit_single_trials.py`
+6. **PRF / encoding-model fit** —
+   `<package>/modeling/fit_prf.py` (3-stage: grid → refine →
+   gradient descent)
+7. **Parameter extraction** —
+   `<package>/modeling/extract_pars.py` (NIfTI → TSV cache)
+8. **Bayesian decoding** —
+   `<package>/modeling/decode.py` (per-trial posterior PDFs)
+9. **Surface projection** — `<package>/surface/sample_to_surface.py`
+10. **Group plotting** — `<package>/visualize/*.py` (locally, after
+    rsync of summary TSVs)
+
+## Common commands
+
+```bash
+# Local: fit one subject, model 4
+python <package>/modeling/fit_prf.py 1 --model 4
+
+# Cluster: fit all subjects, model 4
+sbatch --array=1-<N>%150 <package>/modeling/slurm_jobs/fit_prf.sh 4
+
+# Cluster: smoothed variant
+sbatch --array=1-<N>%150 <package>/modeling/slurm_jobs/fit_prf.sh 4 --smoothed
+
+# Aggregate per-subject TSVs into one summary (cluster)
+ssh sciencecluster 'cd ~/git/<project> && srun -c2 --mem 8G --time 5 \
+    python -m <package>.visualize.collect_results \
+    --summary-tsv notes/data/summary.tsv'
+
+# Pull summary back, plot locally
+rsync sciencecluster:~/git/<project>/notes/data/summary.tsv notes/data/
+python -m <package>.visualize.plot_main --tsv notes/data/summary.tsv \
+    --out notes/figures/main.pdf
+```
+
+## Model labels
+
+| Label | Model | HRF? | Notes |
+|-------|-------|------|-------|
+| 1 | Gaussian PRF | no | baseline |
+| 2 | DoG | no | |
+| 3 | Gaussian | yes | |
+| 4 | DoG | yes | **canonical mean-fit** |
+| 5 | DN-Gaussian | no | inits from m2 |
+| 6 | DN-Gaussian | yes | inits from m5 |
+
+**Dispatch caveat**: model-label → model-class mapping currently lives in
+`fit_prf.py`, `fit_run.py`, and `fit_condition.py`. When adding a model,
+update all three and the table above.
+
+## Experimental constants
+
+Read from per-run `expsettings.yml` where possible (don't hardcode).
+
+| Quantity | Value | Where |
+|----------|-------|-------|
+| TR | 1.6 s | sequence |
+| Volumes per run | 258 | (cleaned sometimes 259 — crop) |
+| Stimulus eccentricity | <X>° | per-run yml |
+| Stimulus diameter | <X>° | per-run yml |
+| Bar aperture radius | <X>° | derived |
+
+## Subject QC ranking *(optional — include if fit quality varies)*
+
+Median R² in V1, model 4. Use top-tier subjects for figures and
+demos; consider excluding bottom-tier from group analyses.
+
+| Tier | Subjects |
+|------|----------|
+| Top | <list> |
+| Middle | <list> |
+| Bottom (consider excluding) | <list> |
+
+## Plotting conventions
+
+- **FWHM, not σ**, for Gaussians (FWHM = 2.355·σ; σ undersells extent).
+- **Capitalize** the first letter of every label, title, legend entry.
+  Keep mid-string acronyms (PRF, fMRI, σ) as-is.
+- **Seaborn** (`relplot`/`catplot`/`FacetGrid`) for per-condition
+  panels with auto CIs.
+- See the `scientific-figures` skill for the full house style.
+
+## Known divergences from the house style
+
+(Document anything this project does differently from the
+cogneuro-project skill — e.g., uses `encoding_model/` instead of
+`modeling/`; commits notebooks at top level for legacy reasons.)
+
+## Cluster gotchas
+
+See the `sciencecluster` skill for the operational details. Quick
+reference:
+
+- Always `git pull` on the cluster before submitting.
+- Throttle large arrays: `--array=1-N%150`.
+- GPU PRF jobs: try `--partition=lowprio` if `standard` is congested.
+- Logs land at `~/logs/`. Tail with `tail -f ~/logs/<job>_*.txt`.

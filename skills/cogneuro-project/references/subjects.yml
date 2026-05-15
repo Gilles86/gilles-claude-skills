@@ -1,0 +1,36 @@
+# Per-subject metadata. Read by Subject class via _load_subjects_yml().
+# Defaults: 1 session, 8 runs. Override only deviations.
+#
+# Subject IDs are zero-padded strings ('01'..'30') for study participants;
+# pilots use the 'pil01' form.
+
+# Study participants
+'01':
+  sessions: [1, 2]
+  runs:
+    1: [1, 2, 3, 4, 5, 6, 7, 8]
+    2: [1, 2, 3, 4, 5, 6, 7, 8]
+
+'02':
+  sessions: [1]              # ses-2 not collected
+  runs:
+    1: [1, 2, 3, 4, 5, 6]    # 6 runs only
+
+# Example: subject with bugged run dropped
+'17':
+  sessions: [1, 2, 3]        # extra session
+  runs:
+    1: [1, 2, 3, 4, 5, 6, 7, 8]
+    2: [1, 2, 3, 4, 5, 6, 7, 8]
+    3: [1, 2, 3, 4]
+  exclude_runs: [[1, 5]]     # ses-1 run-5 unusable
+  notes: |
+    Extra session collected for follow-up. ses-1 run-5 had scanner abort at
+    volume 120; excluded from all analyses.
+
+# Pilots
+'pil01':
+  sessions: [1]
+  runs:
+    1: [1, 2, 3, 4]
+  notes: protocol pilot; FLAIR comparison
