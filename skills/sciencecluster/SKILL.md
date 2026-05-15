@@ -430,16 +430,58 @@ dispatch.
 
 ### cuInit race on multi-GPU nodes
 
-When 8 jobs land simultaneously on the same 8-GPU node, parallel
-`cuInit` calls deadlock the NVIDIA driver → TF falls back to CPU
-→ 60× slowdown → walltime timeouts. Defuse with a 30-second
-random startup stagger in the script body:
+When multiple jobs land simultaneously on the same multi-GPU node
+(8-GPU V100 / A100 / H100 boxes), parallel `cuInit` calls deadlock
+the NVIDIA driver. TF falls back to CPU silently → ~25× slowdown
+→ walltime timeouts → cascading `DependencyNeverSatisfied` downstream.
+
+**Random stagger doesn't fix this on multi-GPU nodes.** With 8 jobs
+picking `sleep $((RANDOM % 30))`, the expected gap between adjacent
+starts is ~30/8 ≈ 4 s — but `cuInit` non-overlap needs the gap to
+exceed the driver-init window (~1 s). Probability all 8 fall ≥ 1 s
+apart is `((30-8)/30)^7 ≈ 10%`. Empirically we see ~90% deadlock
+rate. A wider window (`RANDOM % 120`) helps but is still probabilistic.
+
+**Real fix: per-node `flock` warm-up.** The first job on each node
+does a minimal CUDA init under an exclusive lock; subsequent jobs
+on the same node see a warm driver and init cheaply without racing.
 
 ```bash
-sleep $(( RANDOM % 30 ))
+LOCK="/tmp/cuinit_warm_$(hostname -s).flock"
+(
+    flock -w 60 -x 200 || { echo "WARN: lock timeout"; exit 0; }
+    "$PYTHON" -c "
+import os
+os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '3')
+import tensorflow as tf
+print(f'cuInit OK: {len(tf.config.list_physical_devices(\"GPU\"))} GPU(s)', flush=True)
+"
+) 200>"$LOCK"
 ```
 
-Pair with `ArrayTaskThrottle` and the stagger is bulletproof.
+Properties:
+- **/tmp is node-local**, so the lock has correct semantics even with
+  many tasks landing simultaneously. NFS-based locks would be incorrect.
+- **Crash-safe**: the kernel releases an `flock` when the holder
+  process dies (exit, segfault, OOM-kill, SIGKILL — any cause). The
+  subshell pattern above means the lock is only held during the
+  warm-up; if the warm-up hangs or crashes, the next job's wait ends
+  when the subshell exits.
+- **`-w 60` timeout**: belt-and-suspenders. If something pathological
+  prevents acquisition, the job proceeds (potentially racing, but at
+  least not hanging until SLURM walltime).
+- **First job on a node** (whose `cuInit` is the actual race danger)
+  does a real `import tensorflow` + GPU device enumeration. After this
+  completes, the driver's init state is settled and subsequent jobs'
+  inits are fast and non-racing.
+
+Keep a short random stagger separately for the **NFS dogpile**
+defense (`sleep $((RANDOM % 15))`) — that's a different race
+(concurrent `$HOME/.bashrc` reads at task start), unrelated to cuInit.
+
+`ArrayTaskThrottle` is still useful for the NFS dogpile, but is
+**not sufficient on its own** for cuInit on multi-GPU nodes — even
+with `%50`, if 8 of those 50 land on the same V100, they race.
 
 ## Walltime: keep it tight
 
