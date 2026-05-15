@@ -182,6 +182,110 @@ squeue --me -h -t PD --format='%i %r' \
   | xargs -I {} scontrol release {}
 ```
 
+## Idempotent resubmission — check outputs before submitting
+
+Before re-submitting a chained pipeline that crashed mid-way (or you
+just want to top-up missing pieces), **audit existing outputs per
+(unit, stage) at the granularity downstream consumers need.** Don't
+trust a single coarse predicate like "stage M's main output exists"
+as a proxy for "stage M is fully done" if downstream needs sub-unit
+outputs (per-ROI, per-run, per-event-type).
+
+Two failure modes if you don't:
+
+1. **Duplicate compute** — the same job re-runs against the same
+   input, wasting cluster slots and crowding the queue your *new*
+   priority jobs need.
+2. **Output overwrite races** — two running jobs writing to the
+   same file. If they finish near-simultaneously and one has a bug,
+   the bad one can clobber a good result. Worse, you might not
+   notice for a long time.
+
+Pattern: each pipeline stage gets a `done(unit, stage)` predicate
+that checks the **exact** files downstream will read. The submit
+script skips submission iff `done(unit, stage)` returns true.
+
+```bash
+done_stage() {
+    local unit=$1 stage=$2
+    case "$stage" in
+        prf)   [[ -f "${OUT}/prf/${unit}/result.nii.gz" ]] ;;
+        atlas) [[ -f "${OUT}/atlas/${unit}/inferred.mgz" ]] ;;
+        af)    # per-(unit, roi) — coarser would lie
+               local n=$(ls "${OUT}/af/${unit}/" 2>/dev/null \
+                           | grep -oE 'roi-[A-Za-z0-9]+' | sort -u | wc -l)
+               [[ "$n" -eq "$N_ROIS_EXPECTED" ]] ;;
+    esac
+}
+```
+
+Downstream blocks should be willing to submit with **no afterok dep**
+when their predecessor was skipped (its output is already on disk).
+Pass empty job-IDs through dep wiring; build `--dependency=afterok:$X`
+only when `$X` is non-empty.
+
+## Stale chunks from previous sweeps
+
+Chunked-then-merged array pipelines write per-chunk files like
+`chunks/chunk-NNNN-of-MMMM.npz` and then merge into the final
+output. **Pitfall:** re-running with a different `MMMM` (e.g.,
+switching from `N_CHUNKS=10` to `N_CHUNKS=40`) leaves orphan chunks
+with the old suffix in `chunks/`. The merge script — which usually
+parses `MMMM` from the first chunk and counts files vs that total —
+silently picks up the wrong total, mis-concatenates, or errors with
+`K chunk files found but expected M`. Cascade: merge FAILED →
+downstream `afterok` jobs all `DependencyNeverSatisfied`.
+
+**Fixes (any one works; the third is the most robust):**
+
+```bash
+# 1. Wipe chunks/ before resubmit (idempotent restart):
+rm -rf "${OUT}/${unit}/chunks/"
+
+# 2. Selective delete: keep only chunks matching the current MMMM:
+find "${OUT}/${unit}/chunks" -name 'chunk-*-of-*' \
+    ! -name "chunk-*-of-$(printf '%04d' $N_CHUNKS).*" -delete
+
+# 3. Make the merge script glob by the current MMMM, not all:
+glob_pattern="chunk-*-of-$(printf '%04d' $N_CHUNKS).npz"
+chunks=$(ls "${chunks_dir}/${glob_pattern}")
+```
+
+Symptom when you've been bitten: a couple of subjects'/units' merges
+fail while others succeed, and the failed ones are exactly the ones
+whose `chunks/` dir hadn't been cleared from a previous attempt
+that used a different `N_CHUNKS`.
+
+## Mid-flight partition swap with `scontrol update`
+
+When fairshare throttles jobs on a busy partition (`Reason=Priority`
+despite idle nodes on a sibling like `lowprio` that uses the same
+hardware), don't cancel and resubmit — you'd break `afterok` chains.
+Instead, **rewrite the partition on pending jobs in place**:
+
+```bash
+for jid in $(squeue --me -t PD -h -o '%i' \
+             | awk -F_ '/^[0-9]+/ {print $1}' | sort -u); do
+    scontrol update jobid=$jid Partition=lowprio Account=<new-account>
+done
+```
+
+Properties:
+- Works on **pending jobs only**. Running jobs keep their current
+  partition.
+- **JobIDs are preserved**, so every `afterok:$JID` downstream still
+  points at the right parent — the dep graph is unchanged.
+- Can also update `Account=` in the same command. Useful when you
+  notice mid-flight that you've been submitting under a legacy
+  account.
+- Effect is immediate: re-dispatch typically lands within ~30 s
+  if the new partition has free slots.
+
+The cost is the usual `lowprio` (or whichever sibling you move to)
+trade-off — typically lower job priority and/or preempt risk. Worth
+checking the destination partition's preempt policy before mass-moving
+critical-path work.
+
 ## Zombie cleanup (DependencyNeverSatisfied)
 
 When an upstream task fails, downstream `afterok` jobs become
@@ -300,6 +404,29 @@ python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU')
 `#SBATCH --constraint="L4|V100|A100"` accepts any of those GPU types.
 Useful when L4 alone gives long queue waits. **Exclude H100/H200 if
 the env is on CUDA 11.x** (sm_90 needs CUDA 12).
+
+### Porting GPU → CPU: memory budget doesn't transfer
+
+When GPU queues are congested and you're tempted to switch to CPU
+on the same script, **don't assume the per-task memory budget is
+unchanged**. GPU TF / cuBLAS / cuDNN use tile fusion that keeps
+matmul intermediates inside on-chip scratch — large `(M, K) @ (K, N)`
+operations never materialize the full `(M, K, N)` tensor in DRAM.
+CPU TF + OpenBLAS materializes more intermediates and is much more
+sensitive to inner-batch size.
+
+Concrete symptom: a parameter-fitting script with
+`--voxel-chunk-size 100000` runs fine on a 16 GB GPU but
+`OUT_OF_MEMORY`-kills at 16 GB CPU mem within 2 minutes. The fix is
+to shrink the inner batch (typically 5-10×) — not to bump `--mem`
+indefinitely.
+
+Rule of thumb: when moving a TF fitting workload GPU → CPU, halve
+the inner-chunk size and re-measure peak RSS on one task before
+launching the array. Easier still: stay on GPU and use the
+[lowprio partition](#mid-flight-partition-swap-with-scontrol-update)
+if the standard GPU queue is the bottleneck — same hardware, faster
+dispatch.
 
 ### cuInit race on multi-GPU nodes
 
