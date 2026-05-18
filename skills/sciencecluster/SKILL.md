@@ -24,77 +24,82 @@ The cluster login is typically reached via an SSH alias the user
 sets up (`ssh sciencecluster`). Jobs run via SLURM; you cannot run
 compute on the login node. Always `git pull` before submitting jobs.
 
-## Conda activation in SLURM scripts
+## Conda in SLURM scripts
 
-SLURM scripts run in whatever shebang they specify (default `#!/bin/bash`,
-not the user's interactive zsh). The login `~/.zshrc` is NOT loaded.
-
-**Preferred pattern in SLURM scripts:**
-
-```bash
-source "<path-to-miniforge>/etc/profile.d/conda.sh"
-conda activate <env>
-```
-
-(The user-specific path to miniforge / conda base lives in their
-private config — typically `$HOME/data/miniforge3` on this cluster.)
-
-The alternative `. $HOME/init_conda.sh && conda activate <env>` works
-on login nodes but has occasionally failed inside SLURM jobs (unclear
-cause — possibly compute-node env diff, NFS lag, or interaction with
-`set -e`). **Source `conda.sh` directly in SLURM scripts** — fewer
-indirections, works the same on login + compute nodes.
-
-For one-shot script runs, prefer the direct env binary (no activation
-needed): `<conda-envs-dir>/<env>/bin/python script.py`. Typically the
-cluster's envs live under `$HOME/data/conda/envs/`.
-
-## Never use `conda run` in SLURM scripts
-
-`conda run -n env python` pipes stdout through a subprocess, causing
-log output to buffer heavily even with `python -u`. Always use the
-direct path to the env's python binary, or activate then call python:
+SLURM batch scripts don't source `~/.zshrc` or `~/.bashrc`. Activate
+conda by sourcing `conda.sh` directly, or skip activation and use the
+env's python binary:
 
 ```bash
-# Good — direct binary, instant log output
-export PYTHONUNBUFFERED=1
-<conda-envs-dir>/<env>/bin/python -u script.py
-
-# Also fine — activate then call python
+# Good — activate then call python
 source "<path-to-miniforge>/etc/profile.d/conda.sh"
 conda activate <env>
 export PYTHONUNBUFFERED=1
 python -u script.py
 
-# Bad — extra subprocess pipe causes buffered/delayed log output
-conda run -n <env> python -u script.py
+# Also good — direct env binary, no activation
+export PYTHONUNBUFFERED=1
+<conda-envs-dir>/<env>/bin/python -u script.py
 ```
 
-Always set `PYTHONUNBUFFERED=1` in SLURM scripts. No downside in
-batch/non-interactive contexts.
+Three rules:
 
-## Don't use `set -u` in SLURM scripts that source conda
+- **Always `PYTHONUNBUFFERED=1`** — no downside in batch contexts; logs flush promptly.
+- **Never `conda run -n <env> python`** — the subprocess pipe buffers
+  stdout even with `python -u`.
+- **Don't `set -u`** — conda's per-env activation scripts reference unset
+  vars like `$ADDR2LINE`, `$AR`, `$CC` and abort under strict mode. Job
+  fails in <5 s with `FAILED 1:0`, `Elapsed=00:00:02`. Use `set -eo pipefail`.
 
-Conda's per-env activation scripts (e.g.
-`activate-binutils_linux-64.sh`) reference variables like `$ADDR2LINE`,
-`$AR`, `$AS`, `$CC` that may be unset before activation. Under `set -u`,
-sourcing `conda.sh` or `conda activate <env>` aborts on "unbound
-variable", killing the job in <5 seconds with a cryptic single-line
-log. Symptom in sacct: `FAILED 1:0` with `Elapsed=00:00:02`.
+The alternative `. $HOME/init_conda.sh && conda activate <env>` has
+occasionally failed inside SLURM jobs (unclear cause). Source `conda.sh`
+directly — fewer indirections, works the same on login + compute nodes.
 
-Use `set -eo pipefail` (drop the `-u`) or skip strict mode entirely.
+## `module` in SLURM scripts: use `#!/bin/bash -l`
+
+Plain `#!/bin/bash` SLURM scripts run as non-login non-interactive
+bash and source nothing — `module` isn't defined, `MODULEPATH` is
+empty. Use `#!/bin/bash -l` to make the script a login shell so
+`/etc/profile` → `/etc/profile.d/*.sh` get sourced and `module`
+works:
 
 ```bash
-# Bad — kills the job before python even starts
-set -euo pipefail
-source "$HOME/data/miniforge3/etc/profile.d/conda.sh"
-conda activate <env>
-
-# Fine
-set -eo pipefail
-source "$HOME/data/miniforge3/etc/profile.d/conda.sh"
-conda activate <env>
+#!/bin/bash -l
+module load apptainer
 ```
+
+The silent variant of this bug: a `#!/bin/bash` script that does
+`. "$HOME/.bashrc"` thinking that fixes it. `.bashrc` starts with the
+standard `case $- in *i*) ;; *) return ;; esac` guard and returns
+early non-interactively — its body never runs, and downstream
+`module load X` fails. Without `set -e` the script keeps going and
+the missing tool fails later as `command not found`. This pattern
+sabotaged a lot of old scripts.
+
+`source /etc/profile` works too (explicit; same chain). Don't
+`source /etc/profile.d/lmod.sh` alone — it defines `module` but
+leaves `MODULEPATH` empty.
+
+## Containers: apptainer, not singularity
+
+Cluster migrated **singularityce → apptainer/1.4.1** (open-source
+fork; same CLI, different module name). `.sif` images at
+`/shares/zne.uzh/containers/` are unchanged.
+
+```bash
+#!/bin/bash -l
+module load apptainer
+apptainer exec --cleanenv --writable-tmpfs \
+    --bind "$CONFIG_FILE:/flywheel/v0/input/config.json" \
+    --bind "$OUTPUT_DIR:/flywheel/v0/output" \
+    "$SIF_IMAGE" /flywheel/v0/run
+```
+
+Symptoms of stale scripts: `Lmod ... module(s) are unknown:
+"singularityce"`, or `singularity: command not found` (the
+`singularity` name is gone — apptainer doesn't ship a compatibility
+symlink). Fix is mechanical: replace `singularityce` →
+`apptainer` and `singularity` → `apptainer` everywhere.
 
 ## Log convention: `~/logs/`
 
@@ -388,51 +393,13 @@ quick `sbatch --time=00:10:00` job. Only pure stat queries
 (`squeue`, `sacct`, `ls`, `wc -l`, `head`, `git pull`) belong on the
 login node.
 
-## Split aggregation from plotting: do summaries on the cluster, plots locally
+## Split aggregation from plotting
 
-Once you've decided that something belongs *off* the login node (per the
-section above), there's a further split worth making for analysis scripts
-that end in a figure:
-
-- **Aggregation step** — reads many small files (per-(unit, condition)
-  fits, per-trial outputs, BIDS-wide event TSVs) and reduces them to one
-  summary table. Keep this on the cluster: `srun -c 2 --mem 8G --time 5`
-  is usually plenty. Write the output as a single TSV/CSV/NPZ that fits in
-  a few MB.
-
-- **Plotting / stats step** — reads that one summary file, makes the
-  figure. Run it **locally**: `rsync` the summary file, then run the
-  matplotlib/seaborn script on the laptop. Local iteration is faster
-  (no `srun` queue wait, no module-load overhead, no `--mem` to size,
-  no SSH round-trip per re-render), and the PDF opens in Preview the
-  moment it's written.
-
-```bash
-# REMOTE: aggregate the many fit outputs into one summary TSV
-ssh <cluster-alias> 'cd ~/git/<project> && \
-    srun -A <account> -c 2 --mem 8G --time 5 \
-    <conda-envs-dir>/<env>/bin/python -m <project>.aggregate \
-    --fits-dir <remote-results-dir> \
-    --summary-tsv notes/data/<analysis>_summary.tsv'
-
-# LOCAL: pull the summary, plot from it
-rsync <cluster-alias>:~/git/<project>/notes/data/<analysis>_summary.tsv \
-    ~/git/<project>/notes/data/
-~/mambaforge/envs/<env>/bin/python -m <project>.plot_<analysis> \
-    --tsv notes/data/<analysis>_summary.tsv \
-    --out notes/figures/<analysis>.pdf
-```
-
-**Heuristic:** if the script's bottleneck is `glob + read N files + agg`,
-keep it remote. If the bottleneck is `pd.read_csv(one_file) +
-matplotlib`, move it local. The dividing line is roughly **a few MB of
-input data**: above that you pay VPN/rsync time and login-node load;
-below that local is dominated by faster iteration.
-
-**Exception** — if the plotting script *also* loads cluster-only data
-beyond the summary (ROI atlas NIfTIs for overlays, anatomical images),
-keeping it cluster-side may make sense. But for the common case of
-"read TSV → seaborn → PDF", running locally wins every time.
+Aggregate many small files into one summary TSV on the cluster
+(`srun -c 2 --mem 8G --time 5`), then `rsync` the summary back and
+plot locally. Local iteration is faster (no queue wait, no module
+load, PDF opens in Preview immediately). Full pattern + heuristic
+(a few MB cutoff) lives in the user's global CLAUDE.md.
 
 ## Sync code to the cluster via git, NOT rsync
 
@@ -463,14 +430,13 @@ ssh <cluster-alias> 'cd ~/git/<project> && git stash && git pull && git stash po
 ## GPU jobs
 
 No special partition required. Request a GPU with `--gres=gpu:1`.
-Sciencecluster compute nodes can fail with `module: command not
-found` — lmod isn't always set up. In practice, conda envs that
-bundle their own CUDA runtime (`jax[cuda12]`, `tensorflow-gpu`
-wheels) work without `module load`, since SLURM sets
-`CUDA_VISIBLE_DEVICES` from the `--gres` allocation and the bundled
-CUDA libs handle the rest. If a custom env DOESN'T bundle CUDA, try
-sourcing lmod first (`source /etc/profile.d/lmod.sh`) before module
-commands.
+Conda envs that bundle their own CUDA runtime (`jax[cuda12]`,
+`tensorflow[and-cuda]` wheels) work without any `module load` at
+all, since SLURM sets `CUDA_VISIBLE_DEVICES` from the `--gres`
+allocation and the bundled CUDA libs handle the rest. Reserve
+`module load cuda/...` for envs that explicitly need the system
+CUDA stack (rare). If a custom env DOESN'T bundle CUDA, follow the
+module-loading rules in the next section.
 
 ```bash
 #SBATCH --gres=gpu:1
@@ -524,21 +490,18 @@ dispatch.
 
 ### cuInit race on multi-GPU nodes
 
-When multiple jobs land simultaneously on the same multi-GPU node
-(8-GPU V100 / A100 / H100 boxes), parallel `cuInit` calls deadlock
-the NVIDIA driver. TF falls back to CPU silently → ~25× slowdown
-→ walltime timeouts → cascading `DependencyNeverSatisfied` downstream.
+Multiple jobs landing simultaneously on the same multi-GPU node
+(8-GPU V100 / A100 / H100 boxes) issue parallel `cuInit` calls that
+deadlock the NVIDIA driver. TF silently falls back to CPU → ~25×
+slowdown → walltime timeouts → cascading `DependencyNeverSatisfied`.
 
-**Random stagger doesn't fix this on multi-GPU nodes.** With 8 jobs
-picking `sleep $((RANDOM % 30))`, the expected gap between adjacent
-starts is ~30/8 ≈ 4 s — but `cuInit` non-overlap needs the gap to
-exceed the driver-init window (~1 s). Probability all 8 fall ≥ 1 s
-apart is `((30-8)/30)^7 ≈ 10%`. Empirically we see ~90% deadlock
-rate. A wider window (`RANDOM % 120`) helps but is still probabilistic.
+Random stagger doesn't reliably fix this — with 8 jobs racing in a
+30 s window, the probability that all start ≥ 1 s apart (the driver
+init window) is ~10%. Empirically ~90% deadlock.
 
-**Real fix: per-node `flock` warm-up.** The first job on each node
-does a minimal CUDA init under an exclusive lock; subsequent jobs
-on the same node see a warm driver and init cheaply without racing.
+**Fix: per-node `flock` warm-up.** First job per node does a
+minimal CUDA init under an exclusive lock; subsequent jobs see a
+warm driver.
 
 ```bash
 LOCK="/tmp/cuinit_warm_$(hostname -s).flock"
@@ -553,29 +516,15 @@ print(f'cuInit OK: {len(tf.config.list_physical_devices(\"GPU\"))} GPU(s)', flus
 ) 200>"$LOCK"
 ```
 
-Properties:
-- **/tmp is node-local**, so the lock has correct semantics even with
-  many tasks landing simultaneously. NFS-based locks would be incorrect.
-- **Crash-safe**: the kernel releases an `flock` when the holder
-  process dies (exit, segfault, OOM-kill, SIGKILL — any cause). The
-  subshell pattern above means the lock is only held during the
-  warm-up; if the warm-up hangs or crashes, the next job's wait ends
-  when the subshell exits.
-- **`-w 60` timeout**: belt-and-suspenders. If something pathological
-  prevents acquisition, the job proceeds (potentially racing, but at
-  least not hanging until SLURM walltime).
-- **First job on a node** (whose `cuInit` is the actual race danger)
-  does a real `import tensorflow` + GPU device enumeration. After this
-  completes, the driver's init state is settled and subsequent jobs'
-  inits are fast and non-racing.
+Properties: `/tmp` is node-local (NFS locks would be wrong); kernel
+releases `flock` on holder death (crash-safe); `-w 60` timeout
+prevents indefinite hangs.
 
-Keep a short random stagger separately for the **NFS dogpile**
-defense (`sleep $((RANDOM % 15))`) — that's a different race
-(concurrent `$HOME/.bashrc` reads at task start), unrelated to cuInit.
-
-`ArrayTaskThrottle` is still useful for the NFS dogpile, but is
-**not sufficient on its own** for cuInit on multi-GPU nodes — even
-with `%50`, if 8 of those 50 land on the same V100, they race.
+Keep a short random stagger (`sleep $((RANDOM % 15))`) separately
+for the **NFS dogpile** at task start — different race, unrelated
+to cuInit. `ArrayTaskThrottle` mitigates NFS dogpile but doesn't
+prevent cuInit races — 8 of 50 concurrent tasks can still land on
+the same node.
 
 ## Walltime: keep it tight
 
@@ -591,22 +540,6 @@ sure):
 
 Run `sacct --format=JobID,JobName,Elapsed | grep <jobname>` on past
 runs to calibrate.
-
-## Editing external library packages (vendored / submodule libs)
-
-When patching submodule / vendored library code, treat the package
-as an external API — keep comments and docstrings focused on the
-contract (what the function does, what it raises, type signatures).
-Don't write paragraphs explaining "this used to silently return NaN"
-or "before commit ABC123, ..." inside docstrings. That belongs in
-the **commit message** — `git log` / `git blame` keep it
-discoverable for anyone who wants the incident context without
-polluting the API surface for unrelated users of the library.
-
-In your own project code (the application repo), short "why"
-comments referencing a specific past pathology are fine, because the
-audience IS the project team — but only when removing them would
-genuinely confuse a future reader.
 
 ## Pipeline orchestration: use Snakemake, not bash submitters
 

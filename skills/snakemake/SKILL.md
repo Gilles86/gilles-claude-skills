@@ -221,31 +221,11 @@ seconds-between-status-checks: 30     # default 10 is fine on compute nodes
 max-status-checks-per-second: 1
 ```
 
-## See also (cross-references)
+## See also
 
-- **`sciencecluster` skill** — general SLURM operational knowledge,
-  the cuInit race + flock pattern, `--account=zne.uzh`,
-  `--partition=lowprio`, conda activation inside SLURM, NFS dogpile.
-  Snakemake inherits these via the driver's `sbatch` submission;
-  per-rule SLURM resources in the Snakefile reuse the same
-  conventions.
-- **Per-project Snakefile** — `<repo>/<project>/snakemake/`
-  typically has Snakefile + profile/ + config.yaml + run_driver.sh
-  + status.sh. The skill provides patterns; the project's files
-  encode the specific DAG.
-
-## TODOs (populate as the migration matures)
-
-- [ ] Skill-side patterns for handling project-specific config
-  variants (e.g., the `af_variants` list in retsupp — generated
-  rules from a parse-time loop, since wildcards can't pair).
-- [ ] Snakemake group jobs for tightly-coupled chunked work (e.g.,
-  PRF chunks → merge). Avoids the SLURM submission overhead for
-  micro-tasks.
-- [ ] Profile-side `--immediate-submit` mode for very large DAGs
-  (submit everything up front with `--dependency=afterok:` and let
-  SLURM scheduler do the orchestration).
-- [ ] Recipes for resuming after `scancel <driver>` mid-flight
-  — what survives in `.snakemake/`, what doesn't.
-- [ ] Real numbers on driver-side thread accumulation vs `jobs:`
-  cap, so we can confidently raise the cap on compute-node drivers.
+- **`sciencecluster` skill** — general SLURM operational knowledge
+  (cuInit/flock, conda activation, NFS dogpile). Snakemake inherits
+  these via the driver's `sbatch` submission; per-rule SLURM resources
+  reuse the same conventions.
+- **Per-project Snakefile** — `<repo>/<project>/snakemake/` typically
+  has Snakefile + profile/ + config.yaml + run_driver.sh + status.sh.

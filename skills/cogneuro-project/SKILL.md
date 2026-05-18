@@ -316,45 +316,18 @@ Backend-agnostic encoding-model library (TensorFlow / JAX / PyTorch
 via Keras 3). Used in neural_priors, abstract_values, retsupp,
 retinonumeral, value_capture. Lives in `<package>/modeling/`.
 
-Canonical imports and usage pattern:
+Standard recipe (three-stage fit, used across all projects):
 
-```python
-from braincoder.models import GaussianPRF2DWithHRF, LogGaussianPRF
-from braincoder.hrf import SPMHRFModel
-from braincoder.optimize import ParameterFitter, ResidualFitter, StimulusFitter
-from braincoder.utils import get_rsq
-from braincoder.utils.math import get_expected_value, get_sd_posterior
-from braincoder.utils.stats import fit_r2_mixture, r2_fdr_threshold
+1. Build `GaussianPRF2DWithHRF` (or `LogGaussianPRF`) + `SPMHRFModel`.
+2. `ParameterFitter`: `fit_grid()` → `refine_baseline_and_amplitude()`
+   → `fit()` (gradient descent). **Don't skip the refine step** — it
+   makes the GD warm-start dramatically better.
+3. For decoding: `ResidualFitter` → `omega, dof`, then `StimulusFitter`
+   to invert into stimulus posteriors. Summarize with
+   `get_expected_value` / `get_sd_posterior`.
 
-# 1. Build the model
-hrf_model = SPMHRFModel(tr=1.6)
-model = GaussianPRF2DWithHRF(grid_coordinates=stimulus_grid, hrf_model=hrf_model)
-
-# 2. Fit parameters: grid → gradient descent
-fitter = ParameterFitter(model, data=bold, paradigm=stimulus)
-grid_pars = fitter.fit_grid(mu_x=mu_x_grid, mu_y=mu_y_grid, sigma=sigma_grid)
-pars = fitter.refine_baseline_and_amplitude(grid_pars)
-pars = fitter.fit(init_pars=pars, learning_rate=0.05, max_n_iterations=1000)
-
-# 3. Fit noise model (for decoding)
-resid_fitter = ResidualFitter(model, data=bold, parameters=pars)
-omega, dof = resid_fitter.fit()
-
-# 4. Decode test data into stimulus posterior
-stim_fitter = StimulusFitter(data=test_bold, model=model, omega=omega, dof=dof)
-posteriors = stim_fitter.fit(stimulus_range=test_stims)
-
-# 5. Summarize
-r2 = get_rsq(bold, model.predict(parameters=pars, paradigm=stimulus))
-mean_estimate = get_expected_value(posteriors, stimulus_range)
-sd_estimate = get_sd_posterior(posteriors, stimulus_range)
-```
-
-Three-stage fit (grid → refine baseline/amplitude → full GD) is the
-standard recipe across all projects. Don't skip the refine step — it
-makes the GD warm-start dramatically better.
-
-Template: [references/braincoder_prf_example.py](references/braincoder_prf_example.py).
+Full template with imports:
+[references/braincoder_prf_example.py](references/braincoder_prf_example.py).
 
 ### bauer — Bayesian behavioral models
 
@@ -362,32 +335,10 @@ Hierarchical Bayesian models for risky choice, magnitude comparison,
 and psychophysics (PyMC backend). Used in risk_experiment, tms_risk.
 Lives in `<package>/behavior/`.
 
-Canonical imports and usage pattern:
-
-```python
-from bauer.models import (
-    RiskModel, RiskLapseModel, LossAversionModel,
-    MagnitudeComparisonModel, MagnitudeComparisonLapseModel,
-    FlexibleNoiseRiskModel, RiskModelProbabilityDistortion,
-    PsychometricModel,
-)
-from bauer.utils.bayes import get_posterior, summarize_ppc
-from bauer.utils.math import softplus_np, inverse_softplus_np
-
-# 1. Format trials as long DataFrame: subject, condition, choice, magnitudes
-df = sub.get_behavioral_data()  # via Subject class
-
-# 2. Build + fit model (PyMC NUTS)
-model = RiskModel(df, prior_estimate='objective')
-trace = model.fit(draws=1000, tune=1000, chains=4, target_accept=0.95)
-
-# 3. Posterior summaries
-posterior = get_posterior(trace, model)            # tidy DataFrame
-ppc = summarize_ppc(model, trace)                  # posterior predictive
-
-# 4. Save
-trace.to_netcdf(out_path / 'trace.nc')
-```
+Standard recipe: format trials as long DataFrame (via
+`sub.get_behavioral_data()`) → instantiate the right model class →
+`model.fit(draws=1000, tune=1000, chains=4, target_accept=0.95)` →
+`get_posterior(trace, model)` → save as `.nc`.
 
 Pick the right model class (the fit/parse code is the same):
 
@@ -402,7 +353,8 @@ Pick the right model class (the fit/parse code is the same):
 | `RiskModelProbabilityDistortion` | Adds Prelec probability weighting |
 | `PsychometricModel` | Generic psychometric curve |
 
-Template: [references/bauer_cogmodel_example.py](references/bauer_cogmodel_example.py).
+Full template with imports:
+[references/bauer_cogmodel_example.py](references/bauer_cogmodel_example.py).
 
 ### exptools2 — experiment infrastructure
 
@@ -461,44 +413,29 @@ in the wild.
 
 ## Improvements not yet consistently applied
 
-These were absent or partial across the four audited projects.
+These were absent or partial across the four audited projects:
 
 1. **`tests/test_data.py`** — construct `Subject(1)` and
-   `Subject(quirky_id)`, exercise every `get_*` method, and round-trip
+   `Subject(quirky_id)`, exercise every `get_*` method, round-trip
    a 64-distinct-value array through `_write_volume` to catch the
-   uint8 quantization bug. Doesn't need real BIDS data — mock to a
-   tmpdir. None of the four projects have this; all four have
-   suffered Subject-class regressions that quietly corrupted
-   downstream. See [references/test_data.py](references/test_data.py).
+   uint8 quantization bug. Mock to a tmpdir; doesn't need real BIDS.
+   See [references/test_data.py](references/test_data.py).
 
-2. **`Subject._write_volume()`** — the dtype-safe NIfTI writer.
-   Add to every project's Subject class; remove ad-hoc per-script
-   guards.
+2. **Ad-hoc one-off scripts in `scripts/one_off/<topic>/`**, not at
+   repo root (abstract_values has `fix_sub06_t2mgz.sh`,
+   `run_decoding_pil01.sh`, `fix_and_move_bids.py` at the top — a mess).
 
-3. **Ad-hoc one-off scripts in `scripts/one_off/<topic>/`**, not at
-   repo root. abstract_values has `fix_sub06_t2mgz.sh`,
-   `run_decoding_pil01.sh`, `fix_and_move_bids.py` at the top —
-   each should be in `scripts/one_off/<topic>/` with a README naming
-   what it fixed and when.
-
-4. **`scripts/ingest_new_session.sh`** orchestrator — chains
+3. **`scripts/ingest_new_session.sh`** orchestrator — chains
    fmriprep → glmsingle → modeling → decoding via
    `--dependency=afterok` per-subject (failure isolation).
-   abstract_values has the canonical example. Skeleton:
-   [references/ingest_new_session.sh](references/ingest_new_session.sh).
+   Skeleton: [references/ingest_new_session.sh](references/ingest_new_session.sh).
 
-5. **`Makefile` or `tasks.py`** for the 3–4 most common commands
-   (env build, BIDS smoke test, one-subject fit). Easier than
-   re-deriving the right CLI from CLAUDE.md every time.
+4. **`Makefile` or `tasks.py`** for the 3–4 most common commands
+   (env build, BIDS smoke test, one-subject fit).
 
-6. **A `.gitignore` that actually excludes `build/` and
-   `*.egg-info/`** — neural_priors has `build/` committed. Use
+5. **A `.gitignore` that excludes `build/` and `*.egg-info/`** —
+   neural_priors has `build/` committed. Use
    [references/gitignore](references/gitignore).
-
-7. **A "master DataFrame" entry point on Subject** when the paradigm
-   has conditions — long-format DF with PRF params × ROI × condition
-   pre-joined. retsupp's `get_conditionwise_summary_prf_pars()` is the
-   model. Saves dozens of inline merges across plotting scripts.
 
 ## Bootstrapping a new project
 
