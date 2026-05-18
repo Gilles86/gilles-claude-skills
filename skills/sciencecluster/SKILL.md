@@ -5,10 +5,30 @@ description: SLURM cluster (UZH sciencecluster) operational knowledge — submit
 
 # UZH sciencecluster — SLURM operational knowledge
 
-Generic operational knowledge for the UZH sciencecluster. Per-user
-config (SLURM account name, login alias, conda paths, project-specific
-env names) lives in the user's private global config — this skill
-uses placeholders like `<account>` and `<env>` where applicable.
+Operational knowledge for the UZH sciencecluster. This skill is
+specific to that cluster — cluster-wide constants (partition names,
+QoS values, login host, GPU types) are baked in verbatim. Per-user
+values (SLURM account, conda paths, project env names) are written as
+`<angle-bracket>` placeholders that the user/agent fills in from
+their private global config or the project's CLAUDE.md.
+
+Cluster-wide constants you can use as-is:
+
+| Thing | Value |
+|---|---|
+| SSH alias (typical) | `sciencecluster` |
+| Login host | `cluster.s3it.uzh.ch` |
+| Partitions | `lowprio` (fast dispatch, preemptable), `standard` (fairshare) |
+| QoSes | `debug` (4 min, MaxJobsPU=1, +prio), `normal` (1 day, default), `medium` (2 day, `standard` only), `long` (7 day, MaxJobsPU=24) |
+| GPU types | L4 (1/node, no cuInit race), V100 (8/node), A100 (8/node), H100/H200 (CUDA 12, exclude when env is on CUDA 11) |
+| Shared data root | `/shares/<account>/` (per-account; group-owned share) |
+
+Per-user placeholders (substitute):
+
+- `<account>` — your SLURM account (e.g., `zne.uzh`, `hare.econ.uzh`)
+- `<conda-base>` — conda install root (`~/data/miniforge3`, `~/mambaforge`, etc.)
+- `<conda-envs>` — envs dir (typically `~/data/conda/envs` or `~/.conda/envs`)
+- `<env>` — project conda env name (defined per-project, e.g. `retsupp_cuda`)
 
 **Templates:** copy-pasteable SLURM scaffolding lives in
 `references/`:
@@ -17,12 +37,10 @@ uses placeholders like `<account>` and `<env>` where applicable.
 - `array_gpu_template.sh` — same, plus `--gres=gpu:1`, GPU constraint, cuInit-race defense
 - `submit_chain.sh` — orchestrator that wires per-subject `afterok` chains
 
-Treat these as starting points; edit the placeholders (`<account>`,
-`<env>`, `<path-to-miniforge>`) before submitting.
-
-The cluster login is typically reached via an SSH alias the user
-sets up (`ssh sciencecluster`). Jobs run via SLURM; you cannot run
-compute on the login node. Always `git pull` before submitting jobs.
+Fill the placeholders before submitting. Jobs run via SLURM —
+**never** run compute on the login node (ulimit is 256; see
+§"Never run computationally heavy work on the login node"). Always
+`git pull` on the cluster before submitting.
 
 ## Conda in SLURM scripts
 
@@ -32,14 +50,14 @@ env's python binary:
 
 ```bash
 # Good — activate then call python
-source "<path-to-miniforge>/etc/profile.d/conda.sh"
+source "<conda-base>/etc/profile.d/conda.sh"
 conda activate <env>
 export PYTHONUNBUFFERED=1
 python -u script.py
 
 # Also good — direct env binary, no activation
 export PYTHONUNBUFFERED=1
-<conda-envs-dir>/<env>/bin/python -u script.py
+<conda-envs>/<env>/bin/python -u script.py
 ```
 
 Three rules:
@@ -84,7 +102,7 @@ leaves `MODULEPATH` empty.
 
 Cluster migrated **singularityce → apptainer/1.4.1** (open-source
 fork; same CLI, different module name). `.sif` images at
-`/shares/zne.uzh/containers/` are unchanged.
+`/shares/<account>/containers/` are unchanged.
 
 ```bash
 #!/bin/bash -l
@@ -473,7 +491,7 @@ module-loading rules in the next section.
 ```bash
 #SBATCH --gres=gpu:1
 # No `module load` needed — jax[cuda12] / tensorflow-gpu bundle their own CUDA.
-source "<path-to-miniforge>/etc/profile.d/conda.sh"
+source "<conda-base>/etc/profile.d/conda.sh"
 conda activate <cuda-env>
 nvidia-smi               # sanity check
 ```

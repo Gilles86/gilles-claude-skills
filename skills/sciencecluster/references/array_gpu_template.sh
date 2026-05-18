@@ -58,7 +58,7 @@ echo "Started:     $(date)"
 # Then point LD_LIBRARY_PATH at the right CUDA tree.
 
 # Conda env activation (CUDA-built env)
-source "<path-to-miniforge>/etc/profile.d/conda.sh"
+source "<conda-base>/etc/profile.d/conda.sh"
 conda activate <cuda-env>
 export PYTHONUNBUFFERED=1
 
@@ -68,7 +68,7 @@ python -c "import tensorflow as tf; print('GPUs:', tf.config.list_physical_devic
 # python -c "import jax; print('backend:', jax.default_backend()); print('devs:', jax.devices())"
 
 # --- The work ---
-"$HOME/data/conda/envs/<cuda-env>/bin/python" -u path/to/script.py \
+"<conda-envs>/<cuda-env>/bin/python" -u path/to/script.py \
     "$SUBJECT" \
     --chunk-index "$chunk_idx" \
     --n-chunks "${N_CHUNKS:-1}"

@@ -51,8 +51,8 @@ echo "Host:    $(hostname)"
 echo "Task:    sub-${sub_pad} chunk ${chunk_idx}/${N_CHUNKS:-?} array_task=${SLURM_ARRAY_TASK_ID}"
 echo "Started: $(date)"
 
-# --- Conda env activation. Replace <path-to-miniforge> + <env>. ---
-source "<path-to-miniforge>/etc/profile.d/conda.sh"
+# --- Conda env activation. Replace <conda-base> + <env>. ---
+source "<conda-base>/etc/profile.d/conda.sh"
 conda activate <env>
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
@@ -61,7 +61,7 @@ export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 export CUDA_VISIBLE_DEVICES=-1
 
 # --- The work ---
-"$HOME/data/conda/envs/<env>/bin/python" -u path/to/script.py \
+"<conda-envs>/<env>/bin/python" -u path/to/script.py \
     "$SUBJECT" \
     --chunk-index "$chunk_idx" \
     --n-chunks "${N_CHUNKS:-1}"
