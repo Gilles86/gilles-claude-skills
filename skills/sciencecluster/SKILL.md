@@ -608,6 +608,23 @@ comments referencing a specific past pathology are fine, because the
 audience IS the project team — but only when removing them would
 genuinely confuse a future reader.
 
+## Pipeline orchestration: use Snakemake, not bash submitters
+
+For multi-stage pipelines (multiple subjects × models × ROIs with
+inter-stage dependencies), Snakemake on top of SLURM is cleaner than
+hand-written bash submitters with `afterok` chains: DAG inference
+from input/output paths, automatic per-subject isolation, recovery
+from partial failures, and a single place where the chain is
+specified.
+
+**Snakemake-specific knowledge** — driver placement (NEVER on the
+login node, the per-job Timer threads blow past `ulimit -u`), rule
+output conventions for per-wildcard outputs, why the SLURM plugin
+gives jobs UUID names and how to read the `--comment` field instead,
+recovery after a crashed driver, QoS walltime caps — lives in the
+**`snakemake`** skill. Designed to be read together: this skill for
+the SLURM side, that one for the Snakemake-on-SLURM overlay.
+
 ## Long runs: always provide a visible progress signal
 
 Whenever you launch something that takes longer than ~1 minute on
