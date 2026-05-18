@@ -174,6 +174,7 @@ Default seaborn and matplotlib palettes (`tab10`, `deep`, `Set1`) are a tell tha
 
 **Rules that apply across both:**
 - Use color to encode an actual variable, not to decorate. If two lines could be distinguished by linestyle (solid vs dashed) or marker shape and the difference is categorical, consider doing that instead and keeping color free for a continuous variable.
+- **Color is semantic across the entire figure, not just within a panel.** Once a hue is assigned to a condition in one panel (e.g. blue = cue-left in panel A), the reader will read that same hue as the same condition wherever it appears. If a different panel collapses across that condition (a grand-mean curve, an aggregate bar), do **not** reuse the same hue — switch to a neutral gray. Otherwise the aggregate panel falsely reads as "this is cue-left data". Same logic in reverse: don't introduce a new hue for a condition that already has one in another panel. Color persistence across panels is one of the strongest correctness signals in a paper figure.
 - Test by converting the figure to grayscale (`convert -colorspace Gray fig.pdf fig_gray.pdf` or equivalent). If conditions become indistinguishable, the encoding is leaning too hard on hue alone — add linestyle or marker variation.
 - Avoid pure red and pure green together (deuteranopia). The hand-picked palette above is safe.
 
@@ -277,6 +278,7 @@ Don't write "95% CI" without qualification — readers will read it as confidenc
 ## Axes: the details that matter
 
 - **Tick locations are chosen, not defaulted.** Pick 3–5 ticks per axis. Round numbers, ideally at meaningful values (the lowest and highest stimulus levels, integer log-spaced values, etc.). Use `ax.set_xticks([...])` explicitly.
+- **The data extremes belong on the axis.** Matplotlib defaults pick "round" interior ticks (10, 15, 20) and skip the endpoints of the actual data range (5 and 25), which makes the reader infer the range instead of seeing it. Always include the minimum and maximum data values as explicit ticks — for a 5–25 numerosity range, the right ticks are `[5, 10, 15, 20, 25]`, not `[10, 15, 20]`. Same for any psychophysics axis (contrast levels, spatial frequencies, n-back levels): the extreme stimulus values are part of the design and the reader should see them.
 - **Log axes**: when a variable spans orders of magnitude (contrast, frequency, numerosity), use log scale. Ticks at decadal values with minor ticks at 2, 5 between them. Hide minor tick labels. Consider explicit `ScalarFormatter` to avoid scientific notation when values are 0.01–100.
 - **Trim the axis to the data.** `sns.despine(trim=True)` does most of this, but verify — the spine should end at the last tick, not extend past it.
 - **Axis labels are short.** "Contrast" not "Stimulus contrast (Michelson)" in the label; put units in parentheses, put the qualifier in the caption. Example: `Contrast (%)`, `Firing rate (spikes/s)`, `Reaction time (s)`, `WTP (CHF)`. See the capitalization rule below.
