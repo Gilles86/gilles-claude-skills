@@ -1,0 +1,60 @@
+# Alternative CUDA env: JAX backend instead of TensorFlow. Same braincoder
+# behavior (Keras 3 dispatches between backends via `KERAS_BACKEND`), just
+# avoids TF's CUDA stack entirely. Use this if `environment_cuda.yml`
+# (TF backend) breaks on a future driver upgrade — JAX has historically
+# been the more stable CUDA route.
+#
+# Verified on A100-SXM4-80GB (compute capability 8.0) on 2026-05-18.
+#
+# Activate + set the backend BEFORE running braincoder code:
+#   conda activate <project>_cuda_jax
+#   export KERAS_BACKEND=jax
+#
+# `tensorflow-cpu` is included only because braincoder still has a few
+# `import tensorflow` paths for utilities; the heavy lifting (gradient
+# descent, log-prob, MCMC) goes through Keras 3 + JAX on GPU.
+
+name: <project>_cuda_jax
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.12
+  - pip
+
+  - numpy<2.3
+  - scipy
+  - pandas
+  - matplotlib
+  - seaborn
+  - scikit-learn
+  - statsmodels
+  - tqdm
+  - pyyaml
+  - pingouin
+
+  - nibabel
+  - nilearn
+  - pybids
+  - nipype
+
+  - jupyterlab
+  - ipykernel
+  - ipywidgets
+  - pytest
+
+  - pip:
+      - "jax[cuda12]>=0.4.30"
+      - "keras>=3.13,<4"
+      - "tensorflow-cpu>=2.18"
+      - "tf_keras>=2.18"
+      - "tensorflow-probability>=0.25"
+      - "blackjax>=1.0"
+      - protobuf>=4.21
+
+      - "braincoder @ git+https://github.com/Gilles86/braincoder.git@main"
+      # - "bauer @ git+https://github.com/Gilles86/bauer.git@main"
+
+      - "glmsingle @ git+https://github.com/cvnlab/GLMsingle.git@main"
+      - pymc
+      - neuropythy

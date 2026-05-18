@@ -1,25 +1,29 @@
-# CPU conda environment for local Linux dev and cluster CPU jobs.
-# On Apple Silicon, use the top-level environment_apple_silicon.yml instead.
+# CPU conda environment for local Linux dev and cluster CPU jobs
+# (GLMsingle, surface sampling, anything non-GPU). On Apple Silicon use
+# environment_apple_silicon.yml instead.
 #
 # Build:
 #   conda env create -f create_env/environment_cpu.yml
-#   conda activate <project>
-#   pip install -e .         # installs the project package itself
+#   conda activate <project>_cpu
+#   pip install -e libs/braincoder     # editable submodule for dev
+#   pip install -e .                    # the project package
 #
 # On the cluster:
 #   sbatch create_env/create_cpu_env.sh
+#
+# Stack: Python 3.12 + Keras 3.14 + TF 2.20 CPU. One-for-one match with
+# environment_cuda.yml so the same code runs both places.
 
-name: <project>
+name: <project>_cpu
 channels:
   - conda-forge
-  - defaults
 
 dependencies:
-  - python=3.11
+  - python=3.12
   - pip
 
   # Scientific Python core
-  - numpy
+  - numpy<2.3
   - scipy
   - pandas
   - matplotlib
@@ -28,6 +32,7 @@ dependencies:
   - statsmodels
   - tqdm
   - pyyaml
+  - pingouin
 
   # Neuroimaging
   - nibabel
@@ -36,19 +41,21 @@ dependencies:
   - nipype
 
   # Notebook + dev
-  - jupyter
+  - jupyterlab
   - ipykernel
+  - ipywidgets
   - pytest
 
-  # TensorFlow CPU (encoding-model fits use it; CPU is fine for dev iteration)
-  - tensorflow=2.14
-  - tensorflow-probability=0.22
-
   - pip:
-      # In-house libs pinned to git URL. Don't rely on libs/ being on sys.path.
+      - "tensorflow-cpu==2.20.*"
+      - "keras>=3.13,<4"
+      - "tf_keras>=2.20"
+      - "tensorflow-probability>=0.25"
+      - protobuf>=4.21
+
       - "braincoder @ git+https://github.com/Gilles86/braincoder.git@main"
       # - "bauer @ git+https://github.com/Gilles86/bauer.git@main"
-      # - "exptools2 @ git+https://github.com/VU-Cog-Sci/exptools2.git@master"
 
-      # GLMsingle (if used)
       - "glmsingle @ git+https://github.com/cvnlab/GLMsingle.git@main"
+      - pymc
+      - neuropythy

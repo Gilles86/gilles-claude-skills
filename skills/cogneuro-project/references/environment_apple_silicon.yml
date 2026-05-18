@@ -1,0 +1,65 @@
+# Local Apple-Silicon (M-series) Mac dev env.
+#
+# Lives at the project top level (not inside create_env/) because it's
+# mac-only and the path is what `conda env create -f environment_apple_silicon.yml`
+# looks for by convention.
+#
+# Stack: Python 3.12 + Keras 3.14 + TF 2.20 — matches <project>_cuda
+# one-for-one. TF 2.16+ ships native Apple-Silicon wheels under the plain
+# `tensorflow` package (no more `tensorflow-macos`).
+#
+# `tensorflow-metal` (GPU acceleration via Metal Performance Shaders)
+# is *optional* and currently maxes out at TF 2.16 — leave it out unless
+# you find fits actually bottleneck on CPU locally. The cluster carries
+# the heavy lifting anyway.
+#
+# Build:
+#   conda env create -f environment_apple_silicon.yml
+#   conda activate <project>
+#   pip install -e libs/braincoder
+#   pip install -e .
+
+name: <project>
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.12
+  - pip
+
+  # Scientific Python core
+  - numpy<2.3
+  - scipy
+  - pandas
+  - matplotlib
+  - seaborn
+  - scikit-learn
+  - statsmodels
+  - tqdm
+  - pyyaml
+  - pingouin
+
+  # Neuroimaging
+  - nibabel
+  - nilearn
+  - pybids
+  - nipype
+
+  - jupyterlab
+  - ipykernel
+  - ipywidgets
+  - pytest
+
+  - pip:
+      - "tensorflow==2.20.*"            # native arm64 build (post-2.16, plain `tensorflow`)
+      - "keras>=3.13,<4"
+      - "tf_keras>=2.20"
+      - "tensorflow-probability>=0.25"
+      - protobuf>=4.21
+
+      - "braincoder @ git+https://github.com/Gilles86/braincoder.git@main"
+      # - "bauer @ git+https://github.com/Gilles86/bauer.git@main"
+
+      - "glmsingle @ git+https://github.com/cvnlab/GLMsingle.git@main"
+      - pymc
+      - neuropythy

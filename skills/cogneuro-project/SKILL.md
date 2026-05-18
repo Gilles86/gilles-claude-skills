@@ -252,10 +252,13 @@ The internals (account, conda activation, GPU constraints, log paths,
 
 ## Environment management
 
-Three conda envs, all defined in `create_env/`:
+Four conda envs, all defined in `create_env/` (except the mac one):
 
 - `environment_cpu.yml` — cluster CPU + local Linux dev
-- `environment_cuda.yml` — cluster GPU jobs (TF + CUDA pinned)
+- `environment_cuda.yml` — cluster GPU jobs, TF backend (default for GPU work)
+- `environment_cuda_jax.yml` — cluster GPU jobs, JAX backend (alternative
+  if TF breaks on a future CUDA driver upgrade; same braincoder behavior
+  via `KERAS_BACKEND=jax`)
 - `environment_apple_silicon.yml` — local mac dev (top-level, since
   it's mac-only)
 
@@ -264,10 +267,23 @@ experiment machine — PsychoPy has incompatible deps with the analysis
 stack, so isolate.
 
 `create_cpu_env.sh` and `create_gpu_env.sh` are sbatch scripts so the
-GPU env builds on a GPU node with the right CUDA toolkit visible.
+GPU env builds on a GPU node with the right NVIDIA driver visible at
+install time.
 
-Templates: [environment_cpu.yml](references/environment_cpu.yml),
-[environment_cuda.yml](references/environment_cuda.yml).
+**Canonical stack (2026-05):** Python 3.12 + Keras 3.13+ + TF 2.20.
+Verified end-to-end on A100-SXM4-80GB with the in-house braincoder GP
+fitter. `tensorflow[and-cuda]==2.20.*` bundles its own CUDA libs as pip
+wheels, so the env survives `module load cuda/...` renames on the
+cluster. Older TF 2.14 + Keras 2 envs (`tf2-gpu` and similar) still
+work for projects that haven't migrated, but cannot import braincoder
+from `keras-backend` (it uses `from keras import ops`, which is a Keras
+3 API).
+
+Templates:
+[environment_cpu.yml](references/environment_cpu.yml),
+[environment_cuda.yml](references/environment_cuda.yml),
+[environment_cuda_jax.yml](references/environment_cuda_jax.yml),
+[environment_apple_silicon.yml](references/environment_apple_silicon.yml).
 
 ## libs/ — braincoder, bauer, exptools2
 
