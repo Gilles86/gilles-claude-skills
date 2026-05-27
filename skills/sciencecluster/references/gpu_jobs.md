@@ -24,9 +24,25 @@ nvidia-smi               # sanity check
 ```
 
 GPU fitting only works with a CUDA-built conda env. A standard CPU
-env silently falls back to CPU. **Build the CUDA env on a GPU compute
-node, not the login node** — the install verifies driver compatibility
-at install time.
+env silently falls back to CPU.
+
+**You do NOT need a GPU compute node at env-build time** for the
+modern pip-wheel stack (`tensorflow[and-cuda]`, `jax[cuda12]`,
+`torch+cu*`). Those wheels are precompiled and bundle their own CUDA
+runtime via `nvidia-cuda-runtime-cu*` / `nvidia-cudnn-cu*` packages —
+the install is just wheel extraction, no compilation, no driver probe.
+CUDA initializes lazily at runtime when the library first asks for a
+device. Verified 2026-05-27 on sciencecluster: an env built on a
+regular `standard` CPU node had TF/JAX/torch all detect the L4 GPU
+and run matmul on a subsequent `--gres=gpu:1` job. The login-node ban
+still applies (ulimits + politeness), so sbatch the build to **any**
+compute partition — `lowprio` is fine, no `--gres` needed.
+
+Cases where you would still need a GPU at build time:
+- Installing from source (`pip install --no-binary :all: <pkg>`) or
+  building custom CUDA kernels.
+- Older / non-wheel packages that probe the driver during install
+  (rare in 2026 — most have migrated to bundled-CUDA wheels).
 
 Verify GPU is visible inside a job before long fits:
 

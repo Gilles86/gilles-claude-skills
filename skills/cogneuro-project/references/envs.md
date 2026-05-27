@@ -24,15 +24,24 @@ Some projects split further. Don't add these unless you need them:
   machine. PsychoPy has incompatible deps with the analysis stack, so
   isolate.
 
-## `create_env/` — only when the build needs the cluster
+## `create_env/` — sbatch the build, but a GPU node isn't required
 
-If you do ship a separate CUDA env build script
+If you ship a separate CUDA env build script
 (`create_env/create_gpu_env.sh`), make it an **sbatch script** so the
-GPU env builds on a GPU compute node — the install verifies driver
-compatibility at install time. If you don't need that (e.g. abstract_values
-just keeps `environment_linux.yml` at the top level and the user runs
-`conda env create -f ...` themselves on the cluster login node after
-allocating a GPU `srun`), skip `create_env/` entirely.
+build doesn't run on the login node (ulimits + politeness — see the
+sciencecluster skill's "never run compute on the login node" rule).
+But you do **not** need `--gres=gpu:1` for the build itself: the
+modern pip stack (`tensorflow[and-cuda]`, `jax[cuda12]`, `torch+cu*`)
+ships its CUDA runtime as bundled pip wheels, so install is just
+wheel extraction. Empirically verified 2026-05-27 on sciencecluster
+(see `sciencecluster/references/gpu_jobs.md`). Submit the build to
+`lowprio` or `standard` with no `--gres`; it's faster to dispatch
+that way too.
+
+Older `create_env/create_gpu_env.sh` scripts on legacy projects (e.g.
+`tms_risk`) still ask for a GPU at build time — that was a defensive
+habit from the pre-bundled-wheels era and is now unnecessary. Drop
+the `--gres=gpu:1` next time you touch one of those files.
 
 ## Canonical stack (2026-05)
 
