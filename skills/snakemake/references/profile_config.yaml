@@ -1,0 +1,33 @@
+# Workflow profile for <project>/snakemake/profile/config.yaml.
+# Snakemake reads this when invoked with `--workflow-profile <project>/snakemake/profile`.
+
+executor: slurm
+jobs: 150                              # cap concurrent SLURM jobs in flight; 150 avoids
+                                       # NFS dogpile and stays under cluster per-user ceilings
+
+# Rerun only when the SET of input paths changes; do NOT propagate mtime
+# cascades through serial chains. (See skill: "rerun-triggers cascade".)
+rerun-triggers:
+  - input
+
+# Cluster polling: avoid hammering Slurm
+seconds-between-status-checks: 30
+max-status-checks-per-second: 1
+
+# Default SLURM resources — override per rule via `resources:` in Snakefile
+default-resources:
+  slurm_account: <account>             # e.g. zne.uzh
+  slurm_partition: standard            # NOT lowprio — that's for short/GPU/resumable work
+  cpus_per_task: 2
+  mem_mb: 8000
+  runtime: 60                          # minutes; standard partition default qos=normal caps at 1 day
+
+# IMPORTANT: do NOT add `slurm_extra: "--qos=..."` here. The
+# snakemake-executor-plugin-slurm silently swallows submission errors
+# when slurm_extra collides with internally-handled args, manifesting
+# as the driver hanging at "Execute N jobs..." forever. Use the
+# partition's default QoS, or set `qos:` per resource if your plugin
+# version supports it.
+
+printshellcmds: True
+keep-going: True

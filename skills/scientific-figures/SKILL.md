@@ -192,88 +192,19 @@ How uncertainty is drawn is one of the strongest style signals.
 - **Bootstrap distributions or single-trial spread**: use stripplot or swarmplot overlaid on point estimates, with low alpha (0.3–0.5) and small markers (size 2–3). Don't use box plots for n < ~20 per condition — show the points.
 - **Always state in the caption what the error represents.** "Shaded regions show ±1 SEM across subjects" or "Error bars show 95% bootstrap CI". This is non-negotiable for the audience even if obvious to the author.
 
-## Posteriors from PyMC / bauer: credible intervals
+## Posteriors from PyMC / bauer
 
-Bayesian posteriors are first-class in this tradition — `bauer`, PyMC, NumPyro, Stan all produce posterior samples that need to be plotted as central tendency plus a credible interval. The convention is: **posterior median (or mean) as the central line, 95% HDI as a shaded band, and 50% HDI as a darker inner band when the figure can carry it.** Always say "credible interval" or "HDI", never "confidence interval", in the caption — these are different objects and the audience for this work cares.
+The convention for Bayesian posteriors: **posterior median (or mean) as
+the central line, 95% HDI as a shaded band, and 50% HDI as a darker
+inner band when the figure can carry it.** Always say "credible
+interval" or "HDI" in the caption — never "confidence interval", which
+is a different object the audience for this work cares about.
 
-A practical aside: **HDI ≠ equal-tailed interval** for skewed posteriors. The highest-density interval is the shortest interval containing the specified probability mass; the equal-tailed interval is the 2.5%–97.5% quantile range. They coincide for symmetric posteriors but diverge for skewed ones (variance components, bounded parameters, log-scale parameters). For `bauer` hierarchical posteriors, prefer HDI by default — it's the more honest summary when distributions are skewed.
-
-### Plotting posterior samples with seaborn
-
-Seaborn 0.12+ added an `errorbar` parameter that accepts either a built-in method name or a custom callable. Both options are useful:
-
-**Option 1 — equal-tailed (percentile) intervals via the built-in `"pi"`.** Simplest if equal-tailed is acceptable. Works directly when posterior samples are in long form (one row per draw × x-value):
-
-```python
-# df_post has columns: 'draw', 'x', 'posterior_value'
-sns.lineplot(
-    data=df_post,
-    x='x',
-    y='posterior_value',
-    estimator='median',
-    errorbar=('pi', 95),         # 2.5–97.5 percentile band
-    err_kws={'alpha': 0.25, 'linewidth': 0},
-)
-```
-
-**Option 2 — true HDI via a custom callable using ArviZ.** The right choice for skewed posteriors:
-
-```python
-import arviz as az
-
-def hdi_95(x):
-    lo, hi = az.hdi(x.values, hdi_prob=0.95)
-    return lo, hi
-
-sns.lineplot(
-    data=df_post,
-    x='x',
-    y='posterior_value',
-    estimator='median',
-    errorbar=hdi_95,
-    err_kws={'alpha': 0.25, 'linewidth': 0},
-)
-```
-
-For nested HDI bands (50% + 95%), call `lineplot` twice on the same axes — once with `hdi_50`, once with `hdi_95` — and use a slightly darker alpha for the inner band. Plot 95% first so it sits behind 50%.
-
-### Going from an InferenceData object to a long-form DataFrame
-
-`bauer` returns `arviz.InferenceData`. Seaborn wants long form. The conversion idiom:
-
-```python
-import arviz as az
-import xarray as xr
-
-# Suppose `idata` is the InferenceData returned by bauer/PyMC, and `mu` is the
-# posterior variable indexed by an x-coordinate (e.g., stimulus level).
-post_mu = idata.posterior['mu']                      # dims: chain, draw, x
-df_post = (
-    post_mu
-    .stack(sample=('chain', 'draw'))                 # collapse chain × draw
-    .to_dataframe(name='mu')
-    .reset_index()
-)
-# df_post now has columns: x, chain, draw, sample, mu — long form, plot-ready
-```
-
-For posterior *predictive* draws over a fine x-grid (e.g., a smooth psychometric curve with credible bands), generate predictions at, say, 200 x-values inside the model and run the same conversion. Seaborn will aggregate over the `sample` index automatically when you map `x` and `y='mu'`.
-
-### Discrete posteriors (per-condition parameter posteriors)
-
-When the posterior is over discrete conditions (e.g., per-subject parameter estimates), the equivalent of the lineplot-with-HDI is a pointplot or custom forest plot. Two patterns:
-
-- **Pointplot with HDI errorbars**: `sns.pointplot(data=df_post, x='condition', y='theta', estimator='median', errorbar=hdi_95)`. Works well when conditions are few and the message is about means.
-- **Forest plot** (one row per subject/condition, horizontal HDI segments): drop to matplotlib. `ax.hlines(y=subject_ids, xmin=hdi_low, xmax=hdi_high, lw=1.5)` for the 95% segment, then a thicker overlay for the 50%, then a marker at the median. ArviZ has `az.plot_forest()` but its defaults don't match this style; either restyle it heavily with the rcParams above or build the forest plot manually for fine control.
-
-### Caption language for posteriors
-
-State the error metric precisely:
-- "Shaded bands show 95% highest-density credible intervals over posterior samples."
-- "Error bars show 95% HDI; points are posterior medians."
-- "Inner and outer bands show 50% and 95% HDI."
-
-Don't write "95% CI" without qualification — readers will read it as confidence interval. Either spell out "credible interval" or use "HDI".
+Plotting recipes (`arviz.InferenceData` → long-form DataFrame → seaborn
+`lineplot` with HDI errorbars, including the HDI-vs-equal-tailed
+distinction for skewed posteriors, the forest-plot pattern for discrete
+per-condition posteriors, and caption language) live in
+[references/bayesian_posteriors.md](references/bayesian_posteriors.md).
 
 ## Axes: the details that matter
 
@@ -339,38 +270,12 @@ Real papers have multi-panel figures. Default to `plt.subplots` for simple grids
 
 ## Figure-type cheat sheet
 
-The conventions above are generic. Here's how they specialize for the figure types that come up most.
-
-**Psychometric / tuning curve panel:**
-- Data points: black or dark gray, size proportional to n if n varies across stimulus levels (`s=n*scale`), error bars (vertical only, no caps, lw=0.8)
-- Fit: colored line (one color per subject or condition), 1–1.5 pt, smooth (evaluate at 200+ x-values)
-- X-axis often log-scale (contrast, frequency, numerosity)
-- Y-axis: probability (0 to 1) or proportion (0 to 1), with ticks at 0, 0.5, 1
-- Reference lines: `axhline(0.5)` for chance in 2AFC, thin gray dashed
-
-**Time series / event-locked average (PSTH, BOLD timecourse, pupil trace):**
-- Mean as a line, ±SEM as a shaded band of the same hue
-- Vertical reference lines at event onsets (`axvline`, thin gray, dashed if not a hard event)
-- X-axis label includes the lock event: "Time from stimulus onset (s)"
-- For multiple conditions, all on the same axes with direct labels at line endpoints, not a legend
-
-**Comparison of conditions (bar / point plot):**
-- Prefer pointplot or stripplot+pointplot over bar plot when n is small (< ~30)
-- If using bar: thin (`width=0.6`), unfilled or light fill with darker edge, error bars uncapped
-- Always show individual data points as a swarm or strip overlay when subjects ≤ 30 — readers want to see the n and the spread
-- Connect within-subject points with thin gray lines (`lw=0.5`, `alpha=0.4`) in repeated-measures designs
-
-**Scatter (correlation, model vs data, individual-difference):**
-- Filled circles, single color, size 15–25, edgecolor white or none, alpha 0.6–0.8 if many points
-- Identity line (`x = y`) as thin gray dashed when comparing two measurements of the same quantity
-- Regression line only if statistically meaningful; report r/r² in the panel as a small text annotation, not in a legend
-- Equal aspect ratio (`ax.set_aspect('equal')`) when both axes are the same quantity
-
-**Heatmap (RDM, similarity matrix, model coefficients):**
-- `vlag` or `RdBu_r` for divergent, `mako` or `viridis` for unsigned
-- Square cells, no internal gridlines, no annotations inside cells unless n × n is small (< 8)
-- Colorbar: thin (`shrink=0.6`), outside the plot area, with a short label
-- For RDMs specifically: symmetric, square aspect, hide the upper triangle if redundant
+Specializations of the conventions above for the panel types that come
+up most — psychometric / tuning curve, time-series / event-locked
+average, condition comparison (point/bar), scatter, heatmap — live in
+[references/figure_types.md](references/figure_types.md). Load it when
+starting a panel of that type; the universal rules in this skill still
+apply on top.
 
 ## Saving the figure
 

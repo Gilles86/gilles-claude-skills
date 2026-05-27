@@ -6,21 +6,28 @@ description: Organize a cognitive-neuroscience fMRI project (Gilles's house styl
 # Cognitive-neuroscience project organization
 
 The house style for Gilles's fMRI projects, distilled from auditing
-neural_priors, abstract_values, retinonumeral, and retsupp. Where the
-projects converge, that's the convention. Where they diverge, this
-skill picks one — usually the version the newest project (retsupp)
-settled on — and flags the others as drift to clean up next time
-that file is touched.
+neural_priors, abstract_values, retinonumeral, retsupp, tms_risk.
+Where the projects converge, that's the convention. Where they
+diverge, this skill picks one — usually the version the newest
+project settled on — and flags the others as drift to clean up next
+time that file is touched.
 
 When working in an existing project, follow what's already there
 unless explicitly refactoring; swapping `slurm_jobs/` ↔ `jobs/`
 mid-project just to match this skill is churn for its own sake.
 
-For SLURM internals (conda activation, GPU constraints, NFS dogpile,
-log conventions), see the **sciencecluster** skill — this skill says
-*where* SLURM scripts live in the repo, sciencecluster says *what's
-inside them*. For figure aesthetics, see **scientific-figures**. For
-the NIfTI dtype trap and local-vs-cluster split, see global CLAUDE.md.
+**Cross-skill pointers:**
+- SLURM internals (conda, GPU, NFS, log conventions) → **sciencecluster**
+- fmriprep operational gotchas → **fmriprep**
+- Figure aesthetics → **scientific-figures**
+- NIfTI dtype trap, local-vs-cluster split → global CLAUDE.md
+
+**`references/` are real exemplars.** Most files are verbatim or
+lightly-excerpted code from working projects (`abstract_values`,
+`tms_risk`), each with a provenance header naming source path and git
+SHA. Treat them as concrete reference, not blank-fill templates. The
+genuinely synthetic templates that remain (`subjects.yml`, `gitignore`,
+`CLAUDE.md.template`, `setup.py`, `README.md`) are marked as such.
 
 ## Canonical layout
 
@@ -32,17 +39,13 @@ the NIfTI dtype trap and local-vs-cluster split, see global CLAUDE.md.
 ├── .gitignore               # see references/gitignore
 ├── .gitmodules              # libs/ submodules
 ├── libs/                    # git submodules (braincoder, bauer, exptools2)
-├── create_env/              # conda env builds + sbatch wrappers
-│   ├── create_cpu_env.sh
-│   ├── create_gpu_env.sh
-│   ├── environment_cpu.yml
-│   └── environment_cuda.yml
-├── environment_apple_silicon.yml   # local mac dev (top-level)
+├── environment_cuda.yml     # cluster GPU env (or environment_linux.yml,
+│                            #   or inside create_env/ if it needs sbatch build)
+├── environment_apple_silicon.yml   # local mac dev
 ├── environment_psychopy.yml        # optional, experiment-only
 ├── experiment/              # PsychoPy/exptools2 task code
 ├── notes/                   # markdown working notes (NOT Jupyter)
-│   ├── INDEX.md
-│   ├── STATUS.md
+│   ├── INDEX.md  STATUS.md
 │   ├── data/                # small TSVs aggregated from cluster
 │   ├── figures/             # generated PDFs/PNGs
 │   ├── analyses/            # focused per-analysis writeups
@@ -64,7 +67,7 @@ the NIfTI dtype trap and local-vs-cluster split, see global CLAUDE.md.
 │   ├── behavior/            # behavioral parsing + Bayesian models (bauer)
 │   └── notebooks/           # exploratory Jupyter (inside the package)
 └── derivatives/             # OPTIONAL: small version-controlled outputs only
-                             #   (not the BIDS derivatives — those live on
+                             #   (not BIDS derivatives — those live on
                              #   /shares/zne.uzh/gdehol/ds-<project>
                              #   and /data/ds-<project>)
 ```
@@ -74,14 +77,14 @@ matching `.sh` wrappers next to the `.py` scripts.
 
 ## Naming standardization
 
-Where projects currently disagree, pick the right column for new code;
-leave existing code alone unless refactoring.
+Pick the right column for new code; leave existing code alone unless
+refactoring.
 
 | Pick | Avoid | Why |
 |------|-------|-----|
 | `create_env/` | `cluster_env_setup/` | shorter; retsupp's choice |
 | `slurm_jobs/` | `jobs/` | unambiguous |
-| `modeling/` | `encoding_model/`, `encoding_models/` | covers PRF + non-PRF encoding + decoding (retsupp) |
+| `modeling/` | `encoding_model/`, `encoding_models/` | covers PRF + non-PRF encoding + decoding |
 | `behavior/` | `cogmodels/` | what abstract_values and retsupp use |
 | `notes/` (markdown) | `notebooks/` (Jupyter) for docs | markdown is durable; .ipynb diffs are noise |
 | `<project>/notebooks/` | top-level `notebooks/` | keep notebooks importable from the package |
@@ -98,23 +101,21 @@ This is the **only** place that knows about disk paths, BIDS file
 naming, per-subject quirks, and derivative caching. Analysis scripts
 import `Subject`; they do NOT build paths themselves.
 
-Skeleton: see [references/subject_class.py](references/subject_class.py).
+Real exemplar: [references/subject_class.py](references/subject_class.py)
+(abstract_values). Six conventions:
 
-Six rules:
-
-1. **Constructor: `Subject(subject_id, bids_folder=DEFAULT_LOCAL)`.**
-   Accept both `1` and `'01'`; zero-pad internally. Pilots are
-   strings (`'pil01'`). Default `bids_folder` is the local mac path
+1. **Constructor: `Subject(subject_id, bids_folder=DEFAULT)`.** Accept
+   both `1` and `'01'`; zero-pad internally. Pilots are strings
+   (`'pil01'`). Default `bids_folder` is the local mac path
    (`/data/ds-<project>`); SLURM scripts override to the cluster path.
    Never hardcode the cluster path inside `data.py`.
 
-2. **One method per data type, one keyword per BIDS entity.** Stable
-   surface area:
+2. **One method per data type, one keyword per BIDS entity.**
    ```python
    sub.get_preprocessed_bold(session, run=None, space='T1w')
    sub.get_single_trial_estimates(session, kind='stim', smoothed=False, roi=None)
-   sub.get_prf_parameters_volume(model_label, smoothed=False)   # returns NIfTI dict
-   sub.get_prf_parameters_tsv(model_label, smoothed=False)      # returns DataFrame
+   sub.get_prf_parameters_volume(model_label, smoothed=False)   # NIfTI dict
+   sub.get_prf_parameters_tsv(model_label, smoothed=False)      # DataFrame
    sub.get_brain_mask(session=None, return_masker=True)
    sub.get_volume_mask(roi, session=1, return_masker=False)
    sub.get_confounds(session, kind='minimum')
@@ -131,15 +132,15 @@ Six rules:
    pytest case for each quirky path so regressions surface.
 
 4. **Read per-subject metadata from `<package>/data/subjects.yml`** —
-   sessions, run counts, exclusions. Don't hardcode "8 runs"
-   anywhere; call `sub.get_runs(session)`. Schema in
+   sessions, run counts, exclusions. Don't hardcode "8 runs" anywhere;
+   call `sub.get_runs(session)`. Schema:
    [references/subjects.yml](references/subjects.yml).
 
 5. **Cache the slow stuff at the TSV layer.** PRF parameter NIfTIs are
    big and most downstream code wants one row per voxel.
    `get_prf_parameters_tsv()` reads `derivatives/extracted_pars/*.tsv`;
-   the NIfTI variant is only for spatial analyses. neural_priors
-   already does this — adopt elsewhere.
+   the NIfTI variant is only for spatial analyses. neural_priors does
+   this — adopt elsewhere.
 
 6. **Wrap dtype-safe NIfTI writes in `Subject._write_volume()`.**
    ```python
@@ -148,27 +149,13 @@ Six rules:
    img.header.set_slope_inter(slope=1, inter=0)
    img.to_filename(path)
    ```
-   Without this, the output inherits the (uint8) mask dtype and
-   quantizes to ~256 values via `scl_slope`. See global CLAUDE.md
-   ("NIfTI dtype trap"). Every project independently bites on this —
-   solve once.
+   Without this, output inherits the (uint8) mask dtype and quantizes
+   to ~256 values via `scl_slope`. See global CLAUDE.md ("NIfTI dtype
+   trap"). Every project bites on this independently — solve once.
 
-**Optional patterns** (use when paradigm warrants):
-
-- **Derivative-name composition from boolean flags** —
-  retinonumeral does `encoding_model.cv.smoothed/`. If you adopt this,
-  define `_DERIV_FLAG_ORDER = (...)` as a module constant; both the
-  writer and reader compose names through the same helper. If your
-  flags are simple (one or two booleans), separate methods are
-  cleaner.
-- **Module-level experimental constants** — retsupp's
-  `distractor_locations` / `location_angles` are imported by
-  downstream code rather than redefined. Worth doing whenever you
-  have geometric constants used across modules.
-- **A "master DataFrame" entry point** — retsupp's
-  `get_conditionwise_summary_prf_pars(model=8)` returns a long-format
-  DataFrame with PRF params × ROI labels × condition pre-joined.
-  Worth replicating if your paradigm has conditions.
+Optional patterns (derivative-name composition from boolean flags,
+module-level experimental constants, master-DataFrame entry point):
+[references/subject_class_patterns.md](references/subject_class_patterns.md).
 
 ## Submodules by pipeline stage
 
@@ -184,50 +171,31 @@ Six rules:
 | `visualize/` | summary TSVs | PDFs in `notes/figures/` |
 | `behavior/` | events TSVs | bauer/HSSM trace files |
 
-Not every project needs every stage — add as needed, but use the
-canonical name.
+Not every project needs every stage — add as needed, use the canonical
+name. For the `surface/` projection recipe (nilearn `vol_to_surf` with
+pial+white sampling → `SurfaceTransform` for fsaverage, pycortex
+`blend_curvature` viewer): [references/surface_sampling.md](references/surface_sampling.md).
 
 ## Analysis script CLI convention
 
-```python
-# <package>/modeling/fit_prf.py
-def main(subject, bids_folder='/data/ds-<project>', model=4, smoothed=False):
-    print(f'[fit_prf] subject={subject} model={model} '
-          f'smoothed={smoothed} bids={bids_folder}', flush=True)
+Real exemplar: [references/analysis_script_example.py](references/analysis_script_example.py)
+(abstract_values `fit_glmsingle.py`). Rules:
 
-    # Heavy imports inside main() — keeps `python -c "import <pkg>"` fast
-    # and avoids GPU init during argparse error paths.
-    from <package>.utils.data import Subject
-
-    sub = Subject(subject, bids_folder=bids_folder)
-    # ...
-
-if __name__ == '__main__':
-    import argparse
-    p = argparse.ArgumentParser()
-    p.add_argument('subject', type=int)
-    p.add_argument('--bids_folder', default='/data/ds-<project>')
-    p.add_argument('--model', type=int, default=4)
-    p.add_argument('--smoothed', action='store_true')
-    args = p.parse_args()
-    main(args.subject, bids_folder=args.bids_folder,
-         model=args.model, smoothed=args.smoothed)
-```
-
-Rules:
-- **Positional `subject` (int) first** — never `--subject`.
+- **Positional `subject` (int or `'pil01'`) first** — never `--subject`.
 - **`--bids_folder`** as the only path argument; default to the local
   mac path; SLURM scripts override.
-- **One Python script per analysis variant**, but **model variants**
-  use `--model <int>` not separate scripts (abstract_values:
+- **One Python script per analysis variant**, but **model variants** use
+  `--model <label>` not separate scripts (abstract_values:
   `fit_aprf.py --model session-shift`).
-- **Defer heavyweight imports** (`tensorflow`, `jax`, `pymc`) until
-  inside `main()`; keeps imports fast and surfaces argparse errors
-  before GPU init.
-- **Echo the resolved config** at the top of `main()` so SLURM logs
-  are searchable and typos surface fast.
-
-Template: [references/script_template.py](references/script_template.py).
+- **Defer heavyweight imports** (`tensorflow`, `jax`, `pymc`,
+  `glmsingle`) until inside `main()` — keeps `import <project>` fast
+  and surfaces argparse errors before GPU init.
+- **Echo the resolved config** at the top of `main()` so SLURM logs are
+  searchable and typos surface fast.
+- **Hard-fail loudly on incomplete subjects**
+  (`sub.require_complete_sessions()`) with `--allow-incomplete` as the
+  explicit escape hatch. Silent multi-session aggregation downstream
+  is much worse than an early crash.
 
 ## SLURM jobs co-located with Python modules
 
@@ -241,55 +209,22 @@ modeling/
     └── decode.sh
 ```
 
-One `.sh` wraps **one** `.py` script and threads CLI flags through
-positional args or `--export`. Naming: `<analysis>[_<variant>].sh`
-(e.g., `fit_aprf.sh`, `fit_aprf_cv.sh`). Avoid `submit.sh`, `run.sh`,
-`job1.sh`.
+One `.sh` wraps **one** `.py` script. Inputs go via `--export key=value`,
+not positional args. Naming: `<analysis>[_<variant>].sh` (e.g.,
+`fit_aprf.sh`, `fit_aprf_cv.sh`). Avoid `submit.sh`, `run.sh`, `job1.sh`.
+
+Real exemplar: [references/slurm_job_example.sh](references/slurm_job_example.sh)
+— shows the `--export` pattern, dynamic `ARGS=(...)` array,
+`PYTHONUNBUFFERED=1` + direct env binary, log redirection.
 
 The internals (account, conda activation, GPU constraints, log paths,
-`--array=1-N%150` throttling, dependency chains) live in the
-**sciencecluster** skill — don't duplicate here.
-
-## Environment management
-
-Four conda envs, all defined in `create_env/` (except the mac one):
-
-- `environment_cpu.yml` — cluster CPU + local Linux dev
-- `environment_cuda.yml` — cluster GPU jobs, TF backend (default for GPU work)
-- `environment_cuda_jax.yml` — cluster GPU jobs, JAX backend (alternative
-  if TF breaks on a future CUDA driver upgrade; same braincoder behavior
-  via `KERAS_BACKEND=jax`)
-- `environment_apple_silicon.yml` — local mac dev (top-level, since
-  it's mac-only)
-
-Optionally `environment_psychopy.yml` at the top level for the
-experiment machine — PsychoPy has incompatible deps with the analysis
-stack, so isolate.
-
-`create_cpu_env.sh` and `create_gpu_env.sh` are sbatch scripts so the
-GPU env builds on a GPU node with the right NVIDIA driver visible at
-install time.
-
-**Canonical stack (2026-05):** Python 3.12 + Keras 3.13+ + TF 2.20.
-Verified end-to-end on A100-SXM4-80GB with the in-house braincoder GP
-fitter. `tensorflow[and-cuda]==2.20.*` bundles its own CUDA libs as pip
-wheels, so the env survives `module load cuda/...` renames on the
-cluster. Older TF 2.14 + Keras 2 envs (`tf2-gpu` and similar) still
-work for projects that haven't migrated, but cannot import braincoder
-from `keras-backend` (it uses `from keras import ops`, which is a Keras
-3 API).
-
-Templates:
-[environment_cpu.yml](references/environment_cpu.yml),
-[environment_cuda.yml](references/environment_cuda.yml),
-[environment_cuda_jax.yml](references/environment_cuda_jax.yml),
-[environment_apple_silicon.yml](references/environment_apple_silicon.yml).
+`%150` throttling, dependency chains) live in the **sciencecluster**
+skill — don't duplicate here.
 
 ## libs/ — braincoder, bauer, exptools2
 
 In-house libraries live both as git submodules under `libs/` and as
-pip-installed packages from git URLs in the env YML. Two sources, two
-purposes:
+pip-installed packages from git URLs in the env YML.
 
 - **The env YML pins a commit/branch** for reproducibility. This is
   what runtime imports use:
@@ -298,70 +233,32 @@ purposes:
     - "braincoder @ git+https://github.com/Gilles86/braincoder.git@keras-backend"
   ```
 - **The submodule is for editable development.** After building the
-  env, override the pinned install with the submodule:
+  env, override the pinned install:
   ```bash
   conda activate <project>
   pip install -e libs/braincoder
   ```
-  Now you can edit `libs/braincoder/braincoder/models.py` and the
-  changes show up immediately in the project. To freeze again, drop
-  the editable install and let pip pick up the YML's pinned version.
+  Edits to `libs/braincoder/braincoder/models.py` show up immediately.
+  Drop the editable install to freeze again.
 
 Don't vendor copies. Don't rely on `libs/braincoder` being on
 `sys.path` (only works from repo root).
 
-### braincoder — PRF and encoding-model fitting
+The three libraries:
 
-Backend-agnostic encoding-model library (TensorFlow / JAX / PyTorch
-via Keras 3). Used in neural_priors, abstract_values, retsupp,
-retinonumeral, value_capture. Lives in `<package>/modeling/`.
-
-Standard recipe (three-stage fit, used across all projects):
-
-1. Build `GaussianPRF2DWithHRF` (or `LogGaussianPRF`) + `SPMHRFModel`.
-2. `ParameterFitter`: `fit_grid()` → `refine_baseline_and_amplitude()`
-   → `fit()` (gradient descent). **Don't skip the refine step** — it
-   makes the GD warm-start dramatically better.
-3. For decoding: `ResidualFitter` → `omega, dof`, then `StimulusFitter`
-   to invert into stimulus posteriors. Summarize with
-   `get_expected_value` / `get_sd_posterior`.
-
-Full template with imports:
-[references/braincoder_prf_example.py](references/braincoder_prf_example.py).
-
-### bauer — Bayesian behavioral models
-
-Hierarchical Bayesian models for risky choice, magnitude comparison,
-and psychophysics (PyMC backend). Used in risk_experiment, tms_risk.
-Lives in `<package>/behavior/`.
-
-Standard recipe: format trials as long DataFrame (via
-`sub.get_behavioral_data()`) → instantiate the right model class →
-`model.fit(draws=1000, tune=1000, chains=4, target_accept=0.95)` →
-`get_posterior(trace, model)` → save as `.nc`.
-
-Pick the right model class (the fit/parse code is the same):
-
-| Class | Use for |
-|-------|---------|
-| `RiskModel` | Standard expected-utility risky choice |
-| `RiskLapseModel` | Same + lapse rate |
-| `LossAversionModel` | Risky choice with separate gain/loss utilities |
-| `MagnitudeComparisonModel` | Two-magnitude comparisons (numerosity, line length, etc.) |
-| `MagnitudeComparisonLapseModel` | Same + lapse |
-| `FlexibleNoiseRiskModel` | Risky choice with magnitude-dependent noise |
-| `RiskModelProbabilityDistortion` | Adds Prelec probability weighting |
-| `PsychometricModel` | Generic psychometric curve |
-
-Full template with imports:
-[references/bauer_cogmodel_example.py](references/bauer_cogmodel_example.py).
-
-### exptools2 — experiment infrastructure
-
-PsychoPy + ioHub wrapper for trial sequencing and timing. Lives in
-`experiment/` (top-level), used at runtime on the experiment machine
-only. Don't pull into the analysis env (PsychoPy has incompatible
-deps).
+- **braincoder** — PRF / encoding-model fitting (Keras 3
+  multi-backend). Lives in `<package>/modeling/`. Real fit example:
+  [references/braincoder_prf_example.py](references/braincoder_prf_example.py)
+  shows the canonical 3-stage fit (`fit_grid` →
+  `refine_baseline_and_amplitude` → `fit`). **Never skip the refine
+  step** — it makes gradient-descent warm-start dramatically better.
+- **bauer** — Bayesian behavioral models (PyMC / numpyro). Lives in
+  `<package>/behavior/`. Real fit example with model dispatch +
+  DDM/RDM handling:
+  [references/bauer_cogmodel_example.py](references/bauer_cogmodel_example.py).
+- **exptools2** — PsychoPy + ioHub experiment runtime. Lives in
+  `experiment/` (top-level), used on the experiment machine only.
+  Don't pull into the analysis env (PsychoPy has incompatible deps).
 
 ## notes/ for markdown, not notebooks
 
@@ -381,63 +278,32 @@ Notebooks still belong in the project, but **inside the package** at
 `<package>/notebooks/`. Top-level `notebooks/` makes
 `from <project> import utils` brittle.
 
-## CLAUDE.md content checklist
+## Reference index
 
-Hand-curated, not auto-generated. Required sections:
+Load on demand. Most are real-code excerpts (see provenance headers).
 
-1. **One-line pitch** — paradigm, N, scanner
-2. **Paths** — local + cluster BIDS roots, sourcedata, derivatives
-3. **Subject naming** — pilot vs study, zero-padding, exclusions
-4. **Environment setup** — env names, build commands, known
-   incomplete envs on cluster
-5. **Pipeline stages** in order, with file paths and one-line
-   descriptions
-6. **CLI examples** — copy-paste-runnable commands for common
-   analyses
-7. **SLURM examples** — typical array submissions
-8. **Per-subject gotchas** — pilot quirks, bugged runs, missing
-   sessions
+**Code exemplars**
+- `subject_class.py` — Subject class (abstract_values)
+- `analysis_script_example.py` — analysis script (abstract_values fit_glmsingle.py)
+- `slurm_job_example.sh` — SLURM .sh wrapper (abstract_values)
+- `braincoder_prf_example.py` — braincoder 3-stage fit (abstract_values fit_aprf.py)
+- `bauer_cogmodel_example.py` — bauer model dispatch (tms_risk fit_model.py)
+- `ingest_new_session.sh` — pipeline orchestrator (abstract_values)
+- `test_data.py` — Subject pytest suite (tms_risk)
+- `environment_cuda.yml` — cluster CUDA stack (abstract_values environment_linux.yml)
+- `environment_apple_silicon.yml` — Mac M-series, optional metal GPU
 
-Optional (add as the project grows):
-9. **Model label table** — when there are multiple model variants;
-   note where the dispatch lives if scattered across scripts
-10. **Experimental constants** — TR, volumes per run, stimulus
-    geometry (read from per-run yml when possible, don't hardcode)
-11. **Subject QC ranking** — when there's variation in fit quality
-    that affects exclusion/demo decisions
-12. **Plotting conventions** — FWHM vs σ, label conventions, etc.
+**Deeper conventions** (load when needed)
+- `envs.md` — when to split into 2 / 3 / 4 envs; canonical TF/Keras/JAX stack
+- `subject_class_patterns.md` — optional Subject patterns
+  (deriv-name composition, module constants, master-DataFrame entry)
+- `surface_sampling.md` — volume → fsnative → fsaverage projection recipe
+- `claude_md_checklist.md` — what to put in a project's CLAUDE.md
+- `audit_punchlist.md` — house-style gaps to clean up when touching a project
 
-Skeleton: [references/CLAUDE.md.template](references/CLAUDE.md.template).
-retsupp's CLAUDE.md (~300 lines) is the most fleshed-out reference
-in the wild.
-
-## Improvements not yet consistently applied
-
-These were absent or partial across the four audited projects:
-
-1. **`tests/test_data.py`** — construct `Subject(1)` and
-   `Subject(quirky_id)`, exercise every `get_*` method, round-trip
-   a 64-distinct-value array through `_write_volume` to catch the
-   uint8 quantization bug. Mock to a tmpdir; doesn't need real BIDS.
-   See [references/test_data.py](references/test_data.py).
-
-2. **Ad-hoc one-off scripts in `scripts/one_off/<topic>/`**, not at
-   repo root (abstract_values has `fix_sub06_t2mgz.sh`,
-   `run_decoding_pil01.sh`, `fix_and_move_bids.py` at the top — a mess).
-
-3. **`scripts/ingest_new_session.sh`** orchestrator — chains
-   fmriprep → glmsingle → modeling → decoding via
-   `--dependency=afterok` per-subject (failure isolation).
-   Skeleton: [references/ingest_new_session.sh](references/ingest_new_session.sh).
-
-4. **`Makefile` or `tasks.py`** for the 3–4 most common commands
-   (env build, BIDS smoke test, one-subject fit).
-
-5. **A `.gitignore` that excludes `build/` and `*.egg-info/`** —
-   neural_priors has `build/` committed. Use
-   [references/gitignore](references/gitignore).
-
-## Bootstrapping a new project
-
-See [references/README.md](references/README.md) — copy-paste recipe
-plus a reference index of every template file.
+**Synthetic templates** (copy and edit)
+- `CLAUDE.md.template` — starting CLAUDE.md
+- `subjects.yml` — per-subject metadata schema
+- `gitignore` — sensible default
+- `setup.py` — minimal `find_packages()`
+- `README.md` — bootstrap recipe for a new project

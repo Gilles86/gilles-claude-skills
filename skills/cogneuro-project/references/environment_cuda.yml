@@ -1,67 +1,69 @@
-# CUDA conda environment for cluster GPU jobs (PRF fits, decoding,
-# GP-prior-style empirical-Bayes fitters).
+# ============================================================================
+# REAL EXEMPLAR — verbatim from a working project.
 #
-# Build on a GPU compute node so the bundled CUDA wheels link against
-# the right NVIDIA driver:
+# Provenance: ~/git/abstract_values/environment_linux.yml @ 1e0ef0e
+#             (abstract_values cluster CUDA env, A100/H100 nodes on sciencecluster)
 #
-#   sbatch create_env/create_gpu_env.sh
+# What to study:
+#   * Python 3.11 + Keras 3.13.2 + TF 2.20 + jax[cuda12] + torch — the
+#     multi-backend stack braincoder's keras-backend branch is built for.
+#   * `tensorflow==2.20.0` brings its own CUDA libs via pip wheels; no
+#     `module load cuda/...` needed on the cluster.
+#   * `jax[cuda12]` adds GPU-accelerated JAX; the package extra installs the
+#     matching jaxlib + nvidia-* wheels.
+#   * `torch` is CPU here — swap to `torch+cu121 --extra-index-url ...` if
+#     you want GPU torch too.
+#   * braincoder is pinned to the `keras-backend` branch via git URL.
+#     For dev iteration, do `pip install -e libs/braincoder` post-build to
+#     shadow this with the local submodule.
+#   * `GLMsingle` is pip-from-git (not on PyPI).
+#   * `-e .` installs the project package editable.
+#   * No `numpy<2.3` pin here — abstract_values runs on numpy 2.x.
 #
-# Installed env name on cluster: <project>_cuda
+# NOTE: The skill's text still describes a Python 3.12 stack as canonical;
+# abstract_values is on 3.11 because keras 3.13.2 + tf 2.20 was the last
+# combo that pinned cleanly for them. Either works; pick by what the project
+# already uses.
 #
-# Stack: Python 3.12 + Keras 3.14 + TF 2.20 — matches braincoder's
-# pinned env. Verified on A100-SXM4-80GB (compute capability 8.0) on
-# 2026-05-18. `tensorflow[and-cuda]==2.20.*` bundles its own CUDA libs
-# via pip wheels, so no `module load cuda/...` is required.
-#
-# A JAX-backend alternative is in environment_cuda_jax.yml — same
-# braincoder behavior with `KERAS_BACKEND=jax`, useful as a fallback if
-# a future driver upgrade breaks the TF route.
-
-name: <project>_cuda
+# Build on a GPU compute node (interactive or via sbatch) so the cuda12
+# wheels link against the right NVIDIA driver:
+#   srun --partition=lowprio --gres=gpu:1 --pty bash
+#   conda env create -f environment_linux.yml -p $HOME/data/conda/envs/<project>
+# ============================================================================
+name: abstract_values
 channels:
   - conda-forge
-
 dependencies:
-  - python=3.12
+  - python=3.11
   - pip
-
-  # Scientific Python core
-  - numpy<2.3
+  # Scientific stack
+  - numpy
   - scipy
   - pandas
   - matplotlib
   - seaborn
   - scikit-learn
-  - statsmodels
-  - tqdm
-  - pyyaml
-  - pingouin
-
-  # Neuroimaging
-  - nibabel
-  - nilearn
-  - pybids
-  - nipype
-
   - jupyterlab
   - ipykernel
   - ipywidgets
-  - pytest
-
+  - pingouin
+  # Neuroimaging
+  - nibabel
+  - nilearn
+  - nipype
   - pip:
-      # Keras 3 / TF 2.20 GPU stack — bundled CUDA via pip wheels.
-      - "tensorflow[and-cuda]==2.20.*"
-      - "keras>=3.13,<4"
-      - "tf_keras>=2.20"                  # tensorflow-probability shim
-      - "tensorflow-probability>=0.25"
-      - protobuf>=4.21
-
-      # In-house libs. Pin to the git URL for env-builder reproducibility,
-      # then `pip install -e libs/braincoder` post-build for dev iteration.
-      - "braincoder @ git+https://github.com/Gilles86/braincoder.git@main"
-      # - "bauer @ git+https://github.com/Gilles86/bauer.git@main"
-
-      # Optional / common extras:
-      - "glmsingle @ git+https://github.com/cvnlab/GLMsingle.git@main"
+      # Keras 3 + multi-backend ML
+      - tensorflow==2.20.0
+      - tensorflow-probability==0.25.0
+      - tf-keras
+      - jax[cuda12]           # GPU-accelerated JAX on cluster (CUDA 12)
+      - torch                 # PyTorch (CPU; add torch+cu121 for GPU)
+      - keras==3.13.2
+      # Braincoder (keras-backend branch)
+      - git+https://github.com/Gilles86/braincoder.git@keras-backend
+      # fMRI analysis
+      - git+https://github.com/cvnlab/GLMsingle.git
+      - pybids
       - pymc
-      - neuropythy
+      - tqdm
+      - -e .

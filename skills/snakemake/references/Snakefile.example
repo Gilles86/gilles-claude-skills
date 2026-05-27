@@ -1,0 +1,75 @@
+# Minimal Snakefile illustrating the common per-project patterns:
+#   - configfile loaded from a relative path
+#   - completeness / sanity guards at config-load time (fail loudly)
+#   - wildcard_constraints to keep regex matching tight
+#   - rule output is a real per-wildcard file (preferred over sentinels)
+#   - resources block uses plugin-supported keys (slurm_account, slurm_partition,
+#     cpus_per_task, mem_mb, runtime); avoid slurm_extra unless free-form
+#
+# Replace <project>, <account>, <bids_folder> placeholders for your repo.
+
+from itertools import product
+
+configfile: "<project>/snakemake/config.yaml"
+
+SUBJECTS = [str(s) for s in config["subjects"]]
+BIDS     = config["bids_folder"]
+DERIV    = f"{BIDS}/derivatives"
+
+# Tighten wildcard regexes so unintended matches don't trigger surprise rules
+wildcard_constraints:
+    subject = r"[A-Za-z0-9]+",
+    smooth  = r"(_smoothed)?",          # empty or "_smoothed"
+
+# ── load-time validation ────────────────────────────────────────────────────
+# Refuse to plan if upstream invariants aren't met. Triggers BEFORE any sbatch
+# fires, so the user sees the error immediately.
+_required_subjects = config.get("expected_subjects", [])
+_missing = [s for s in _required_subjects if s not in SUBJECTS]
+if _missing:
+    raise WorkflowError(f"Missing required subjects: {_missing}")
+
+# ── targets ─────────────────────────────────────────────────────────────────
+rule all:
+    input:
+        expand(f"{DERIV}/_snake/sub-{{subject}}.done", subject=SUBJECTS),
+
+rule subject_complete:
+    input:
+        # Replace this with the real terminal outputs for a finished subject
+        f"{DERIV}/myresult/sub-{{subject}}/final.tsv",
+    output:
+        f"{DERIV}/_snake/sub-{{subject}}.done",
+    shell: "mkdir -p $(dirname {output}) && touch {output}"
+
+
+# ── example heavy rule (fmriprep-class) ─────────────────────────────────────
+rule fmriprep:
+    output:
+        # Real per-wildcard output, NOT a sentinel — Snakemake can then track
+        # rerun correctly. If your tool writes a tree, pick the most stable
+        # one-per-subject file as the rule output.
+        f"{DERIV}/fmriprep/sub-{{subject}}/anat/sub-{{subject}}_desc-preproc_T1w.nii.gz",
+    log: "logs/fmriprep_{subject}.log"
+    resources:
+        cpus_per_task=16, mem_mb=64_000, runtime=22*60,    # 22h, fits inside qos=normal 1-day cap
+        # slurm_account + slurm_partition come from profile default-resources
+    shell:
+        "PARTICIPANT_LABEL={wildcards.subject} "
+        "bash $HOME/git/<project>/<project>/cluster_jobs/fmriprep.sh"
+
+
+# ── example fan-out rule (one job per (subject, smoothing, model)) ──────────
+rule fit_model:
+    input:
+        # Upstream rule's per-wildcard output
+        fmriprep = rules.fmriprep.output,
+    output:
+        f"{DERIV}/encoding/{{model}}{{smooth}}/sub-{{subject}}/result.tsv",
+    log: "logs/fit_model_{model}{smooth}_{subject}.log"
+    resources:
+        cpus_per_task=8, mem_mb=32_000, runtime=2*60,
+    shell:
+        "PARTICIPANT_LABEL={wildcards.subject} MODEL={wildcards.model} "
+        "SMOOTHED=$([[ '{wildcards.smooth}' == '_smoothed' ]] && echo 1 || echo 0) "
+        "bash $HOME/git/<project>/<project>/cluster_jobs/fit_model.sh"
