@@ -134,10 +134,44 @@ SLURM-aware specifics (driver placement, plugin quirks, recovery
 after a crashed driver). This skill and that one are designed to be
 read together.
 
+## Building conda envs: sbatch the build, but **no GPU node needed**
+
+For the modern pip-wheel CUDA stack
+(`tensorflow[and-cuda]`, `jax[cuda12]`, `torch+cu*`) you do **not**
+need `--gres=gpu:1` to build the env — even for full CUDA stacks.
+Those wheels are precompiled and ship their own CUDA runtime via
+`nvidia-cuda-runtime-cu*` / `nvidia-cudnn-cu*` packages; the install
+is just wheel extraction, no compilation, no driver probe. CUDA
+initializes lazily at first device-use inside the running job.
+
+**Verified end-to-end on sciencecluster 2026-05-27:** env built on a
+`standard` CPU node (no GPU visible, no `nvidia-smi`), then activated
+on a `--gres=gpu:1` job — TF 2.20, JAX 0.10, and torch 2.12+cu130 all
+detected the L4 and ran matmul without any post-install fixup.
+
+So: sbatch the build (login-node ulimit rule applies — `conda` +
+`pip` fork too many processes) to `lowprio` or `standard` with no
+`--gres`. Faster dispatch, and you don't burn a GPU slot just to
+unpack wheels. Legacy `create_gpu_env.sh` scripts on older projects
+(`tms_risk` etc.) that still ask for `--gres=gpu:1` are carryover
+from the pre-bundled-wheels era — drop the `--gres` next time you
+touch them.
+
+Cases where you would still need a GPU at build: `pip install
+--no-binary :all: <pkg>`, or custom CUDA-kernel compilation. Full
+operational details (paths convention, build sbatch template, solver
+notes) in `references/conda_envs.md`.
+
 ## Reference index
 
 Load these on demand — each is a focused playbook, not required
 reading.
+
+**Conda envs**
+
+- `references/conda_envs.md` — paths convention, build sbatch
+  template, why a GPU node isn't needed for the build, when it still
+  would be, solver speed notes
 
 **Inside the SLURM script**
 
