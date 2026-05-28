@@ -174,7 +174,7 @@ Default seaborn and matplotlib palettes (`tab10`, `deep`, `Set1`) are a tell tha
 
 **Rules that apply across both:**
 - Use color to encode an actual variable, not to decorate. If two lines could be distinguished by linestyle (solid vs dashed) or marker shape and the difference is categorical, consider doing that instead and keeping color free for a continuous variable.
-- **Color is semantic across the entire figure, not just within a panel.** Once a hue is assigned to a condition in one panel (e.g. blue = cue-left in panel A), the reader will read that same hue as the same condition wherever it appears. If a different panel collapses across that condition (a grand-mean curve, an aggregate bar), do **not** reuse the same hue — switch to a neutral gray. Otherwise the aggregate panel falsely reads as "this is cue-left data". Same logic in reverse: don't introduce a new hue for a condition that already has one in another panel. Color persistence across panels is one of the strongest correctness signals in a paper figure.
+- **Color is semantic across the entire figure, not just within a panel.** Once a hue is assigned to a condition in one panel (e.g. blue = cue-left in panel a), the reader will read that same hue as the same condition wherever it appears. If a different panel collapses across that condition (a grand-mean curve, an aggregate bar), do **not** reuse the same hue — switch to a neutral gray. Otherwise the aggregate panel falsely reads as "this is cue-left data". Same logic in reverse: don't introduce a new hue for a condition that already has one in another panel. Color persistence across panels is one of the strongest correctness signals in a paper figure.
 - Test by converting the figure to grayscale (`convert -colorspace Gray fig.pdf fig_gray.pdf` or equivalent). If conditions become indistinguishable, the encoding is leaning too hard on hue alone — add linestyle or marker variation.
 - Avoid pure red and pure green together (deuteranopia). The hand-picked palette above is safe.
 
@@ -223,7 +223,7 @@ per-condition posteriors, and caption language) live in
 
 ## Capitalization: first letter always
 
-Every piece of text on a figure starts with a capital letter — axis labels, annotations, legend entries, panel titles, condition labels. Even two-word annotations: "Model fit", not "model fit". "Stimulus onset", not "stimulus onset". The rest of the phrase is lowercase unless it's a proper noun, acronym, or unit symbol (`Hz`, `CHF`, `RT`).
+Every piece of text on a figure starts with a capital letter — axis labels, annotations, legend entries, panel titles, condition labels. Even two-word annotations: "Model fit", not "model fit". "Stimulus onset", not "stimulus onset". The rest of the phrase is lowercase unless it's a proper noun, acronym, or unit symbol (`Hz`, `CHF`, `RT`). The **one exception** is panel letters themselves, which are lowercase (a, b, c, …) per the Nature house style — see the multi-panel-layout section.
 
 This is small but it's one of the strongest readability signals — figures where some labels start lowercase and others don't look unfinished, and the lowercase-everywhere style (common in defaults) reads as informal. Consistency here is free; just do it everywhere.
 
@@ -263,7 +263,7 @@ Use annotations to label: the key effect ("Peak shift", "Saturating nonlinearity
 
 Real papers have multi-panel figures. Default to `plt.subplots` for simple grids and `matplotlib.gridspec` when panels have different sizes or share complex relationships.
 
-- **Panel letters: A, B, C, D, …** in bold sans-serif, slightly larger than the axis labels (10–12 pt), placed at the top-left **outside** the axes. Use `ax.text(-0.15, 1.05, 'A', transform=ax.transAxes, fontsize=12, fontweight='bold', va='bottom', ha='right')`. Same letter position across all panels — pick coordinates that work, then reuse.
+- **Panel letters: a, b, c, d, …** (lowercase) in bold sans-serif, slightly larger than the axis labels (10–12 pt), placed at the top-left **outside** the axes. Use `ax.text(-0.15, 1.05, 'a', transform=ax.transAxes, fontsize=12, fontweight='bold', va='bottom', ha='right')`. Same letter position across all panels — pick coordinates that work, then reuse. Lowercase is the Nature/Nature Comms house style and now the default here; uppercase (A, B, C) is the older Science / J Neurosci convention — only use it when the target journal explicitly requires it. Panel letters are the **one exception** to the "every piece of text starts capitalized" rule above — caption references should match ("see panel a", not "see panel A").
 - **Don't waste space.** `plt.tight_layout()` is a reasonable start; `constrained_layout=True` at figure creation is better. If panels share an x or y axis, use `sharex=True` / `sharey=True` and remove redundant tick labels.
 - **Align axes across panels.** When two panels show the same quantity (e.g., both show firing rate), they should have the same y-axis range and the same y-axis label position. Eyes should not have to recompute scale across panels.
 - **Aspect ratio per panel.** Most data panels look right between 1:1 and 4:3 (width:height). Time-series panels can be wider (2:1 or 3:1). Avoid tall-thin panels unless plotting something genuinely vertical (population stack, anatomical depth).
@@ -319,7 +319,7 @@ These come up constantly and are worth refusing by default:
 Before saving and presenting the figure, step back and verify:
 
 1. **Can I state the figure's point in one sentence?** If not, the figure doesn't have a story yet — go back and decide what it's trying to say before polishing further.
-2. **Does the panel order match the argument?** A reads first, then B, then C. The eye should travel through the science in the order the argument is made.
+2. **Does the panel order match the argument?** Panel a reads first, then b, then c. The eye should travel through the science in the order the argument is made.
 3. **Cover the caption. Does the figure still convey the main finding?** This is the hard test. If covering the caption breaks comprehension of the *finding* (not the bookkeeping — n, error metric, statistical test are fine to put in the caption), the figure needs more in-panel annotation. Add a label pointing at the effect, name the model fit, mark the reference value. The panels must carry the message.
 4. **Does the caption carry the bookkeeping?** Define every abbreviation, state every error metric, give n, name the statistical test. The caption isn't where the message lives, but it is where readers find the details they need to trust the message.
 5. **Is there anything on the figure that isn't data or essential reference?** If yes, remove it.
