@@ -147,6 +147,14 @@ Load on demand — each is one symptom or one design decision.
 - [`driver_recovery.md`](references/driver_recovery.md) — `LockException`
   vs `IncompleteFilesException` after `scancel`; `--cleanup-metadata`
   escape hatch
+- [`orphaned_jobs.md`](references/orphaned_jobs.md) — why "preserve the
+  expensive in-flight jobs across a driver restart" silently causes
+  duplicate dispatch + scratch racing + corrupt gzip intermediates;
+  the right way to restart a driver mid-flight
+- [`rule_output_changes.md`](references/rule_output_changes.md) — why
+  changing a rule's `output:` path without backfilling the new sentinel
+  triggers a full cohort re-dispatch (e.g. 14 × 5h fmripreps); the
+  backfill-first pattern that prevents it
 - [`rerun_triggers.md`](references/rerun_triggers.md) — why dropping
   `mtime` from `rerun-triggers` stops forward-cascade reruns
 - [`monitoring.md`](references/monitoring.md) — opaque UUID job names

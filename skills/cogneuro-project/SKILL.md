@@ -157,6 +157,32 @@ Optional patterns (derivative-name composition from boolean flags,
 module-level experimental constants, master-DataFrame entry point):
 [references/subject_class_patterns.md](references/subject_class_patterns.md).
 
+## Output formats — pick by the data's shape
+
+Write each analysis output in the format that matches its *shape*, not
+whatever's one line to dump:
+
+- **Whole-brain / volumetric** (per-voxel maps over the brain mask: PRF
+  params, GLM betas, decoded maps) → **NIfTI**, always float32 + cleared
+  scl (dtype trap above). It must live in brain space for masking, ROI
+  extraction, and pycortex/freeview.
+- **Tabular** (ROI-restricted, per-(sub, ROI), per-voxel-within-an-ROI,
+  or group summaries) → **tidy long-format TSV**: one row per
+  observation, with subject / ROI / model / fold / condition as columns.
+  Greppable, opens anywhere, survives library upgrades, plots straight
+  into seaborn. Keep logically distinct tables in **separate** TSVs (e.g.
+  a small CV-R² table apart from a wider fitted-params table) so the one
+  you replot constantly stays small.
+- **Ephemeral pipeline caches** (concatenated cleaned BOLD, intermediate
+  arrays) → **npz / parquet**, co-located with their source so provenance
+  is obvious.
+- **Never pickle a durable result.** pandas/numpy pickles break across
+  library versions and are opaque/un-greppable. If a result is worth
+  keeping it's worth a TSV (tabular) or NIfTI (volumetric); reserve
+  pickle for throwaway within-run scratch. A nested payload (lists of
+  per-fold DataFrames, ragged arrays) is a smell — flatten it to a long
+  TSV with the fold/subject/ROI as columns.
+
 ## Submodules by pipeline stage
 
 | Submodule | Inputs | Outputs |
