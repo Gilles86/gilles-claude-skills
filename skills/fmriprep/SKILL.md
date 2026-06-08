@@ -11,6 +11,11 @@ neural_priors, retsupp, retinonumeral. The wrapper script lives at
 **cogneuro-project** skill); this skill is about *what goes wrong with
 fmriprep itself*.
 
+Copy-pasteable artifacts are in [`references/`](./references/): the
+wrapper [`fmriprep.sh`](./references/fmriprep.sh), the clean-rerun
+procedure [`clean_rerun.md`](./references/clean_rerun.md), and the two
+coregistration-QA scripts. See [`references/README.md`](./references/README.md).
+
 For fmriprep's own docs (what it does, CLI flags, output spec), see
 <https://fmriprep.org>. This skill assumes that baseline.
 
@@ -74,7 +79,9 @@ If a re-run finishes in 30 min and downstream errors with neuropythy
 
 ### Forcing a true clean rerun
 
-Wipe **all three** paths before resubmitting:
+Full procedure + smell-test + post-run checklist:
+[`references/clean_rerun.md`](./references/clean_rerun.md). The crux —
+wipe **all three** paths before resubmitting:
 
 ```bash
 SUB=10                              # subject label, e.g. "10" or "pil02"
@@ -143,7 +150,8 @@ preproc_T2w in ses-2/anat").
 
 The wrapper script *does* need an exit-1 tolerance branch — apptainer
 ≥ 1.4 has a known habit of returning 1 on otherwise-clean fmriprep
-runs. But the discriminator must be **output-based, not html-based**:
+runs. But the discriminator must be **output-based, not html-based**
+(full wrapper in [`references/fmriprep.sh`](./references/fmriprep.sh)):
 
 ```bash
 APTAINER_RC=$?
@@ -197,12 +205,12 @@ fsleyes \
   --cmap hot --alpha 40
 ```
 
-abstract_values has ready-made loops for this (worth porting to other
-projects when the cross-project QA helper crystallizes):
+Two ready-made loops for this (templates in `references/`, originally
+from abstract_values — worth porting to other projects):
 
-- `abstract_values/visualize/inspect_coreg_fsleyes.py` — interactive
-  fsleyes per (subject, session)
-- `abstract_values/visualize/check_coreg.py` — batch nilearn
+- [`references/inspect_coreg_fsleyes.py`](./references/inspect_coreg_fsleyes.py)
+  — interactive fsleyes per (subject, session)
+- [`references/check_coreg.py`](./references/check_coreg.py) — batch nilearn
   `plot_anat().add_edges(boldref)` to per-subject PDF
 
 ## Where the logs are
