@@ -87,14 +87,14 @@ ssh sciencecluster 'cd ~/git/<project> && git stash && git pull && git stash pop
 #!/bin/bash             # use #!/bin/bash -l if you need `module load …`
 set -eo pipefail        # NOT set -u (conda activation aborts under -u)
 
+# PREFERRED: env binary directly, under `exec` (no activation, streams
+# live, and SLURM's SIGTERM on scancel/timeout hits python directly).
+exec <conda-envs>/<env>/bin/python -u script.py
+
+# Only if the env needs activate.d hooks (conda-CUDA/cuDNN, GDAL/PROJ, R):
 source "<conda-base>/etc/profile.d/conda.sh"
 conda activate <env>
-export PYTHONUNBUFFERED=1
-python -u script.py
-
-# Equivalent: skip activation, use env binary directly
-export PYTHONUNBUFFERED=1
-<conda-envs>/<env>/bin/python -u script.py
+exec python -u script.py     # still exec, so signals reach python
 ```
 
 The non-obvious bits:
@@ -108,15 +108,25 @@ The non-obvious bits:
   `.txt` log sits frozen at the first few lines for the entire run, so
   you cannot tell a working job from a hung one (`sstat -j <id>
   --format=AveCPU` will show CPU accruing — that's the only live signal).
-  **Two fixes, in order of preference:**
-  1. **Use the env binary directly** — `<conda-envs>/<env>/bin/python -u
-     script.py` (no activation, no wrapper, no buffering). This is the
-     default for one-shot job scripts.
-  2. If you must keep `conda run` (e.g. matching an existing repo
-     convention), it **must** be `conda run --no-capture-output -n <env>
-     python -u …`.
+  `conda run` also **does not forward SIGTERM** to the child — even with
+  `--no-capture-output` — so on `scancel`/wall-time the python child is
+  orphaned and any `atexit`/signal flush handler never runs (conda#10351,
+  still open). **Fixes, in order of preference:**
+  1. **`exec <conda-envs>/<env>/bin/python -u script.py`** — no
+     activation, no wrapper, streams live, AND `exec` makes python the
+     job-step process so SLURM's SIGTERM reaches it directly. The default
+     for one-shot job scripts. Safe for pure-Python/numpy/TF/JAX envs;
+     only envs with `activate.d` hooks (conda-CUDA/cuDNN, GDAL/PROJ, R)
+     need `source conda.sh && conda activate <env> && exec python -u …`
+     (check `ls <env>/etc/conda/activate.d/` — empty ⇒ direct binary is
+     equivalent).
+  2. If you must keep `conda run` (matching an existing repo convention),
+     it **must** be `conda run --no-capture-output -n <env> python -u …`
+     — but know it still won't forward signals.
   When editing or adding any `slurm_jobs/*.sh`, check this — many older
   repo scripts still use bare `conda run` and will silently buffer.
+  (micromamba/pixi `run` avoid the activation dance but their buffering /
+  signal behavior is unverified — test before relying on them in batch.)
 - **No `set -u`** — conda activation scripts reference unset vars
   (`$ADDR2LINE`, `$AR`, `$CC`) and abort. Job dies in <5 s with
   `FAILED 1:0`, `Elapsed=00:00:02`.

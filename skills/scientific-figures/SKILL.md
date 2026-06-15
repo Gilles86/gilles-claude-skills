@@ -206,6 +206,17 @@ distinction for skewed posteriors, the forest-plot pattern for discrete
 per-condition posteriors, and caption language) live in
 [references/bayesian_posteriors.md](references/bayesian_posteriors.md).
 
+**Posterior predictive checks** (overlaying model-simulated data on the
+observed data — psychometric/chronometric curves, RT distributions,
+quantile-probability plots) are a different panel with their own
+conventions: data as the anchoring markers, model as line + HDI band
+(never reversed), and the band built by summarizing **per posterior-
+predictive draw before** taking the HDI so predictive uncertainty is
+preserved. Full recipes — the bauer `model.ppc` / PyMC
+`sample_posterior_predictive` workflow, binning, per-subject vs group
+PPCs, and the "a PPC must be able to fail" rule — live in
+[references/posterior_predictive_checks.md](references/posterior_predictive_checks.md).
+
 ## Axes: the details that matter
 
 - **Tick locations are chosen, not defaulted.** Pick 3–5 ticks per axis. Round numbers, ideally at meaningful values (the lowest and highest stimulus levels, integer log-spaced values, etc.). Use `ax.set_xticks([...])` explicitly.
