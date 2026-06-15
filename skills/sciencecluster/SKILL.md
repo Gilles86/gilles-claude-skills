@@ -102,8 +102,21 @@ The non-obvious bits:
 - **`PYTHONUNBUFFERED=1` + `python -u`** — no downside in batch
   contexts; without them logs only flush when buffers fill, which
   hides a stuck job for hours.
-- **Never `conda run -n <env> python`** — the subprocess pipe buffers
-  stdout even with `python -u`.
+- **`conda run -n <env> python` BUFFERS ALL STDOUT until the process
+  exits** — `python -u` and `PYTHONUNBUFFERED=1` do NOT fix it, because
+  `conda run` itself captures the child's pipe. Failure signature: the
+  `.txt` log sits frozen at the first few lines for the entire run, so
+  you cannot tell a working job from a hung one (`sstat -j <id>
+  --format=AveCPU` will show CPU accruing — that's the only live signal).
+  **Two fixes, in order of preference:**
+  1. **Use the env binary directly** — `<conda-envs>/<env>/bin/python -u
+     script.py` (no activation, no wrapper, no buffering). This is the
+     default for one-shot job scripts.
+  2. If you must keep `conda run` (e.g. matching an existing repo
+     convention), it **must** be `conda run --no-capture-output -n <env>
+     python -u …`.
+  When editing or adding any `slurm_jobs/*.sh`, check this — many older
+  repo scripts still use bare `conda run` and will silently buffer.
 - **No `set -u`** — conda activation scripts reference unset vars
   (`$ADDR2LINE`, `$AR`, `$CC`) and abort. Job dies in <5 s with
   `FAILED 1:0`, `Elapsed=00:00:02`.
@@ -126,7 +139,12 @@ with `sacct --format=JobID,JobName,Elapsed | grep <jobname>`.
 **5. Always emit a visible progress signal** on anything that runs
 >1 minute — a tail-able log line, a `tqdm` bar,
 `pm.sample(progressbar=True)`, etc. — with `PYTHONUNBUFFERED=1` so
-updates flush promptly.
+updates flush promptly. For long sweeps/loops, prefer **writing each
+result row to the output file and `flush()`-ing as you go** rather than
+collecting everything and writing once at the end: the growing file is a
+progress meter that survives stdout buffering AND a wall-time kill (an
+end-only write means a timeout loses the entire job's output). The
+row-count (`wc -l`) tells you exactly how far it got.
 
 **6. Orchestrate multi-stage pipelines with Snakemake**, not
 hand-written `afterok` chains. See the **`snakemake`** skill for the
