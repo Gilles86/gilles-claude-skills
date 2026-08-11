@@ -38,6 +38,51 @@ trust (band covers data across the range) or pointing at the failure
 (data sits outside the band somewhere specific) — annotate that
 failure directly ("Model underpredicts fast errors").
 
+## Before you build one: the two questions that catch most PPC bugs
+
+Answer both in writing before plotting. Each has a cheap numeric test.
+
+**1. Is the band built from SIMULATED OUTCOMES, or from predicted probabilities?**
+
+It must be simulated outcomes. Aggregating the model's `p` gives the posterior of the
+*mean probability* — parameter uncertainty only. The observed proportion additionally
+carries trial-level sampling noise, so a `p`-based band is far too narrow and ordinary
+scatter reads as misfit. For a Bernoulli outcome:
+
+```python
+sim = (rng.random(p.shape) < p).astype(float)   # NOT p itself
+```
+
+*Test — band coverage.* For a nominal 95% band, roughly 95% of observed points should
+fall inside it. Compute `((obs >= lo) & (obs <= hi)).mean()`. Well below 0.95 means the
+band is too narrow (usually this bug); well above means it has been over-smoothed and
+the check can no longer fail. **Print this number every time.**
+
+**2. Is the model aggregated exactly as the data are?**
+
+Same grouping keys, same order of operations, and the per-draw statistic computed
+*before* summarising across draws. Averaging over subjects must happen **within** each
+posterior draw.
+
+*Test — feed the raw data through the model's pipeline.* Replace the simulated outcomes
+with the observed 0/1 choices as if they were a single draw. If the two paths are truly
+identical, this reproduces the observed summary to machine precision:
+
+```python
+fake = observed.values[:, None]                  # one "draw"
+via_model_path = (pd.DataFrame(fake, index=idx).groupby(level=keys).mean()
+                    .groupby(group_keys).mean())
+assert np.allclose(via_model_path.iloc[:, 0], observed_summary, atol=1e-12)
+```
+
+Anything above ~1e-12 means the pipelines differ — usually different grouping keys, a
+dropped subject, or a binning step applied on one side only.
+
+**A third trap, upstream of both:** if the predictor is binned, bin on a *rank*
+(`v.rank(method='first')`) whenever it has few distinct values. `qcut` on a tied
+variable splits differently across pandas versions and silently changes the figure
+between machines.
+
 ## How to build it (the aggregation that keeps PP uncertainty)
 
 The band must propagate posterior-predictive uncertainty, so compute
@@ -87,7 +132,18 @@ Direct-label conditions on the data (no legend) per the house style.
   returns a long DataFrame indexed by (trial keys, pp sample) with a
   `simulated_choice` (and `simulated_rt` for DDM/RDM) column — already
   the shape above. Merge the predictor/condition columns back on by the
-  trial keys.
+  trial keys. `model.predict(paradigm, parameters)` gives the per-trial
+  model `p_choice` for a single parameter set (loop posterior draws for a band).
+  - **Trace → parameters** (the "give it the trace, get the parameters"
+    extractors): `model.get_groupwise_parameter_estimates(idata, include_sd=True)`
+    → population `{param}_mu` coefficients (with regressor coords, e.g.
+    `width_z`, `C(group)[..]`) + `_sd` spreads; `get_subjectwise_parameter_estimates(idata)`
+    → per-subject draws. Use these instead of re-parsing summary TSVs.
+  - **DO NOT** pass `save_p_choice=True` / `save_trialwise_estimates=True` to
+    `build_estimation_model` just to get a PPC: that writes a deterministic
+    **per trial × per draw × per chain** into the idata and balloons it to GBs
+    on trial-rich datasets. Recompute trialwise quantities **on demand** with
+    `ppc`/`predict` from the compact trace instead.
 - **PyMC**: `pm.sample_posterior_predictive(idata)` →
   `idata.posterior_predictive[<obs>]` with dims (chain, draw, obs);
   stack `(chain, draw)` → `pp_draw` and `.to_dataframe()`.
@@ -131,6 +187,49 @@ Direct-label conditions on the data (no legend) per the house style.
   decision variable") — a reader can't otherwise tell signal from
   binning artifact.
 
+## The mean-parameter trap (this one is easy to miss and looks plausible)
+
+**A curve evaluated at the mean parameters is not the mean of the curves.** For any
+nonlinear link — and every psychometric, tuning curve, softmax and sigmoid is one —
+
+    f(E[theta])  !=  E[f(theta)]
+
+so a "model fit" drawn by plugging the posterior-mean parameters into the link does
+**not** predict the statistic you plotted the data as. If the observed points are an
+average across subjects, the model line must be the same average across subjects, taken
+*after* evaluating the link per subject (and per draw).
+
+The failure is directional and therefore easy to mistake for real misfit: averaging
+sigmoids whose thresholds differ **flattens** the average, so the mean-parameter curve
+is always **too steep**. It will sit below the data at the low end and above it at the
+high end, exactly like a model that over-predicts the effect of the stimulus.
+
+Measured on one real hierarchical probit (35 subjects, 6 bins, 2 conditions, 2 orders):
+mean-parameter curve RMSE **0.069**, correctly aggregated prediction RMSE **0.019** — a
+3.7x difference that reads as "the fit is bad" rather than "the plot is wrong".
+
+Correct order of operations, always:
+
+```python
+# WRONG -- link applied to averaged parameters
+p_line = expit(slope.mean() * (x - threshold.mean()))
+
+# RIGHT -- link per subject per draw, then aggregate the same way the data were
+p = expit(slope[:, :, None] * (x[None, None, :] - threshold[:, :, None]))  # draw, subj, x
+p_subj_avg = p.mean(axis=1)              # average over subjects, matching the data
+line = np.median(p_subj_avg, axis=0)     # summarize draws AFTER aggregating
+band = np.quantile(p_subj_avg, [.025, .975], axis=0)
+```
+
+The same trap applies to any derived quantity summarized from a posterior: a ratio of
+means is not the mean of ratios, `|dP/dm|` at the mean is not the mean `|dP/dm|`, and a
+credible interval for a product cannot be built from the two marginal intervals. If a
+figure invites the reader to multiply or divide two plotted panels, check that the
+arithmetic actually holds on the aggregated values before saying so in the caption.
+
+**Cheap check:** compute RMSE of your model line against the plotted points. If it is
+much worse than the model's own reported fit, suspect this before suspecting the model.
+
 ## Anti-patterns
 
 - Plotting the **mean of pp draws as a line with no band** — throws
@@ -143,3 +242,7 @@ Direct-label conditions on the data (no legend) per the house style.
   partly a binning artifact). Use shared bins.
 - Over-binning until everything fits — a PPC that can't fail isn't a
   check.
+- **Drawing the link function at the posterior-mean parameters** and
+  calling it the fit — see "The mean-parameter trap" above. Always
+  evaluate per subject/draw and aggregate the way the data were
+  aggregated.

@@ -20,6 +20,38 @@ Or retroactively on an already-submitted array:
 scontrol update jobid=<ARRAY_JOB_ID> ArrayTaskThrottle=50
 ```
 
+## `--export=ALL` makes this much more likely — usually drop it
+
+`--export=ALL` (and bare `--export=ALL,VAR=x`) tells SLURM to *retrieve the
+submitting user's environment* on each compute node, which is precisely the
+step that fails under load. Four arrays of 19 tasks submitted back-to-back
+put **all 44 pending tasks** into `user env retrieval failed requeued held`
+on 2026-08-05 — well under the ~100-task threshold above, because the
+`--export=ALL` retrieval multiplies the per-task cost.
+
+If the job script sources conda itself (`. $HOME/init_conda.sh && conda
+activate <env>`, which every template here does) it does **not** need the
+login environment. Pass only what the script actually reads:
+
+```bash
+# fragile: forces per-task env retrieval
+sbatch --array=1-19 --export=ALL,NVOX=100,TAG=nvox100 job.sh
+
+# robust: SLURM ships just these two variables
+sbatch --array=1-19 --export=NVOX=100,TAG=nvox100 job.sh
+```
+
+Recovery for an already-held set — release them all in one call, they usually
+run fine on the retry:
+
+```bash
+scontrol release $(squeue -u $USER -h -r -t PD -o "%i %R" \
+    | grep -i held | awk '{print $1}' | paste -sd, -)
+```
+
+Check it worked with `squeue -u $USER -h -r -t PD -o "%R" | sort | uniq -c`:
+the reason should change from `(... held)` to `(Priority)`.
+
 ## Semantics
 
 **`ArrayTaskThrottle=N` caps concurrent *running* tasks, not just

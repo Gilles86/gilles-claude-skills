@@ -267,6 +267,12 @@ A few rules:
 
 Use annotations to label: the key effect ("Peak shift", "Saturating nonlinearity"), the model ("Efficient-coding fit"), reference values ("Chance", "Veridical"), and time-series event markers ("Stimulus onset", "Response"). Don't repeat what the axis label already says.
 
+**Lines are labeled in place, not pointed at.** Curved leaders are for *point-like* data features (a peak, an inflection, one cluster). A line — model prediction, regression fit, `axvline`/`axhline` reference — is an extended object; a leader to one point on it is arbitrary and reads as clutter (confirmed user feedback: leader-to-vline looks bad). Instead:
+- **Diagonal / sloped lines**: place the label alongside the line, rotated to match its slope. On equal-aspect axes with equal ranges the rotation is `degrees(atan(slope))`; otherwise compute from display coordinates. Nudge the label a little off the line so text never sits on the stroke.
+- **Vertical reference lines**: stop the line short of the axis top (`ax.vlines(x, 0, y_stop)`) and set the label horizontally just above it; two related vlines can end at the same height and share one label centered above them.
+- **Horizontal reference lines**: label at the right end, just above or below the line.
+- Label color: the line's color (darkened if the line is pale/translucent) or neutral dark gray; proximity + rotation carry the association, no connector needed.
+
 ## Multi-panel layout
 
 Real papers have multi-panel figures. Default to `plt.subplots` for simple grids, `matplotlib.gridspec` when panels differ in size or share complex relationships.

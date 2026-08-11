@@ -43,6 +43,11 @@ Per-user placeholders (substitute from the project's CLAUDE.md):
 - `<conda-envs>` — envs dir (e.g. `~/data/conda/envs`)
 - `<env>` — project conda env name (e.g. `retsupp_cuda`)
 
+- **`/tmp` is node-local, not shared.** A script written to `/tmp` on the
+  login node is invisible to `srun`/`sbatch` on a compute node — the job
+  dies with `can't open file`. Stage scripts and scratch under `$HOME`
+  (or the project dir); use `$TMPDIR` only for within-job scratch.
+
 ## Templates
 
 Copy-pasteable SLURM scaffolding lives in `references/`:
