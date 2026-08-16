@@ -12,6 +12,23 @@ root cause. This skill exists to shortcut that debugging loop.
 
 ## Golden rules
 
+**0. An AI assistant driving these sessions cannot see `cortex.webgl.show()` —
+render a static PNG and actually look at it before reporting anything.**
+
+`cortex.webgl.show()` opens an interactive WebGL session in the *user's*
+browser; nothing about it is inspectable from the process that launched
+it. It is entirely possible for a script to run cleanly, print plausible
+summary statistics (an `n=`, a threshold, a percentage), and still have
+produced a dataset that renders as a **blank curvature-only image** —
+e.g. because nothing survived a significance threshold, so `alpha` is 0
+everywhere. The printed numbers alone will not catch this. Render the
+same data with `cortex.quickflat.make_figure(vtx, with_curvature=True) →
+fig.savefig(...)` (or this project's own `--static-png` flag where
+available) and actually view the resulting file before describing the
+result to anyone. This caught a genuinely broken figure in the
+abstract_values session that spawned this skill — the printed log looked
+completely normal.
+
 **1. A `cortex.webgl.show()` server dies the instant your script returns —
 it does not run as an independent process.**
 
