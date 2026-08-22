@@ -60,26 +60,35 @@ Per-user placeholders (substitute from the project's CLAUDE.md):
   mkdir -p "$TMPDIR"
   ```
 
-  **Both lines.** The compiledir redirect alone is not enough: g++ writes
-  its intermediate `.s`/`.o` files to `$TMPDIR` (default `/tmp`), and
-  node-local `/tmp` can be full or quota'd on any given node — observed as
-  `fatal error: error writing to /tmp/cc*.s: Disk quota exceeded` (2026-08-22,
-  same sweep, different node). pytensor logs rewrite-stage compile failures
-  as scary ERROR tracebacks but continues on a python fallback, so a job can
-  look alive while compiling nothing — treat any `/tmp/cc*` compile error in
-  a log as this bug. Backstop: `export TMPDIR=/scratch/$USER/tmp` in the
-  cluster `~/.bash_profile` (sbatch propagates the submission environment),
-  so even scripts that forget the preamble inherit a safe temp dir. Per-task
-  dirs also eliminate compile-lock contention between array elements. Sweep
-  old dirs occasionally (`rm -rf /scratch/$USER/pytensor /scratch/$USER/tmp`).
+  **Both lines** (the `TMPDIR` one is the general rule above — g++ writes
+  its intermediates there). One deception specific to pytensor: it logs
+  rewrite-stage compile failures as scary ERROR tracebacks but continues on
+  a python fallback, so a job can look RUNNING while compiling nothing —
+  treat any `/tmp/cc*` or compile error in a PyMC log as this bug even if
+  the job is alive. Per-task compiledirs also eliminate compile-lock
+  contention between array elements. Sweep occasionally
+  (`rm -rf /scratch/$USER/pytensor`).
 
-- **`/tmp` is node-local, not shared.** A script written to `/tmp` on the
-  login node is invisible to `srun`/`sbatch` on a compute node — the job
-  dies with `can't open file`. Stage scripts/code under `$HOME` (git repos
-  under `~/git/<project>`); stage scratch **data** (temp files, large
-  intermediates) under `/scratch/$USER` — a real shared filesystem, not
-  `$HOME`. SLURM jobs already scratch there per-job; `$TMPDIR` is for
-  within-job-step scratch only.
+- **`/tmp` is node-local, not shared — and can be full.** Two distinct
+  failure modes. (1) A script written to `/tmp` on the login node is
+  invisible to `srun`/`sbatch` on a compute node — the job dies with
+  `can't open file`. Stage scripts/code under `$HOME` (git repos under
+  `~/git/<project>`); stage scratch **data** under `/scratch/$USER`.
+  (2) **`$TMPDIR` defaults to `/tmp`, and any node's `/tmp` can be full or
+  quota'd** — and *everything* honors `$TMPDIR`: compilers spawned by
+  pytensor/JAX/numba (`fatal error: error writing to /tmp/cc*.s: Disk
+  quota exceeded`, observed 2026-08-22), Python's `tempfile`, `sort`,
+  ffmpeg, … So in **every** job script:
+
+  ```bash
+  export TMPDIR="/scratch/$USER/tmp/${SLURM_JOB_ID:-manual}_${SLURM_ARRAY_TASK_ID:-0}"
+  mkdir -p "$TMPDIR"
+  ```
+
+  and as a backstop put `export TMPDIR=/scratch/$USER/tmp` in the cluster
+  `~/.bash_profile` — `sbatch` propagates the submission environment, so
+  even scripts that forget the line inherit a safe temp dir. Sweep old
+  dirs occasionally (`rm -rf /scratch/$USER/tmp`).
 
 ## Templates
 
