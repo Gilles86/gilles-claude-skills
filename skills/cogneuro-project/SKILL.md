@@ -278,6 +278,12 @@ The three libraries:
   shows the canonical 3-stage fit (`fit_grid` →
   `refine_baseline_and_amplitude` → `fit`). **Never skip the refine
   step** — it makes gradient-descent warm-start dramatically better.
+- **bauer fits on any cluster**: set
+  `PYTENSOR_FLAGS="base_compiledir=/scratch/$USER/pytensor/<jobid>_<taskid>"`
+  in the SLURM script — pytensor's default `$HOME/.pytensor` cache blows
+  home quotas and serializes on one lock when many fits compile at once
+  (bit tms_risk 2026-08-22; details in the **sciencecluster** skill). This
+  applies even with `--backend numpyro`.
 - **bauer** — Bayesian behavioral models (PyMC / numpyro). Lives in
   `<package>/behavior/`. Real fit example with model dispatch +
   DDM/RDM handling:

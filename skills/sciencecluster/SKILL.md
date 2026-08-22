@@ -43,10 +43,31 @@ Per-user placeholders (substitute from the project's CLAUDE.md):
 - `<conda-envs>` — envs dir (e.g. `~/data/conda/envs`)
 - `<env>` — project conda env name (e.g. `retsupp_cuda`)
 
+- **PyMC / pytensor jobs: point the compile cache at `/scratch`, per task.**
+  pytensor C-compiles the model graph into `$HOME/.pytensor` by default. An
+  array of concurrent fits therefore (a) hammers one lock directory and (b)
+  bursts thousands of small files into `$HOME` — observed to die with
+  `OSError: [Errno 122] Disk quota exceeded` inside
+  `cmodule.py … compile_str` when ~12 tasks compiled simultaneously
+  (tms_risk lfxgrid, 2026-08-22), even though steady-state home usage was
+  under quota. In every SLURM script that runs PyMC (also when sampling via
+  numpyro/JAX — the logp graph and `compute_log_likelihood` still compile
+  through pytensor):
+
+  ```bash
+  export PYTENSOR_FLAGS="base_compiledir=/scratch/$USER/pytensor/${SLURM_JOB_ID:-manual}_${SLURM_ARRAY_TASK_ID:-0}"
+  ```
+
+  Per-task dirs also eliminate compile-lock contention between array
+  elements. Sweep old dirs occasionally (`rm -rf /scratch/$USER/pytensor`).
+
 - **`/tmp` is node-local, not shared.** A script written to `/tmp` on the
   login node is invisible to `srun`/`sbatch` on a compute node — the job
-  dies with `can't open file`. Stage scripts and scratch under `$HOME`
-  (or the project dir); use `$TMPDIR` only for within-job scratch.
+  dies with `can't open file`. Stage scripts/code under `$HOME` (git repos
+  under `~/git/<project>`); stage scratch **data** (temp files, large
+  intermediates) under `/scratch/$USER` — a real shared filesystem, not
+  `$HOME`. SLURM jobs already scratch there per-job; `$TMPDIR` is for
+  within-job-step scratch only.
 
 ## Templates
 
