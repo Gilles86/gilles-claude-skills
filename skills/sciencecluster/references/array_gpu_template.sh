@@ -26,6 +26,13 @@
 
 set -eo pipefail
 
+# Temp + compile caches on /scratch, never $HOME or node-local /tmp
+# (quota bursts + full-node /tmp both observed; see SKILL.md golden rules).
+export TMPDIR="/scratch/$USER/tmp/${SLURM_JOB_ID:-manual}_${SLURM_ARRAY_TASK_ID:-0}"
+mkdir -p "$TMPDIR"
+# If this job runs PyMC/pytensor (incl. --backend numpyro):
+# export PYTENSOR_FLAGS="base_compiledir=/scratch/$USER/pytensor/${SLURM_JOB_ID:-manual}_${SLURM_ARRAY_TASK_ID:-0}"
+
 # 30s random stagger — defuses cuInit race on multi-GPU nodes AND the
 # NFS profile-read dogpile (held-tasks issue). Critical when the array
 # is large; harmless when small.

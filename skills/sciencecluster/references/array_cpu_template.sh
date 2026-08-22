@@ -21,7 +21,14 @@
 # script can be used for short and long jobs. Tight walltime helps
 # fair-share priority.
 
-set -eo pipefail          # NO -u: conda activate trips on it.
+set -eo pipefail
+
+# Temp + compile caches on /scratch, never $HOME or node-local /tmp
+# (quota bursts + full-node /tmp both observed; see SKILL.md golden rules).
+export TMPDIR="/scratch/$USER/tmp/${SLURM_JOB_ID:-manual}_${SLURM_ARRAY_TASK_ID:-0}"
+mkdir -p "$TMPDIR"
+# If this job runs PyMC/pytensor (incl. --backend numpyro):
+# export PYTENSOR_FLAGS="base_compiledir=/scratch/$USER/pytensor/${SLURM_JOB_ID:-manual}_${SLURM_ARRAY_TASK_ID:-0}"          # NO -u: conda activate trips on it.
 
 # Stagger start to avoid NFS dogpile when many tasks dispatch
 # simultaneously (env retrieval from $HOME/.bashrc).

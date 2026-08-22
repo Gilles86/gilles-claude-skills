@@ -56,10 +56,22 @@ Per-user placeholders (substitute from the project's CLAUDE.md):
 
   ```bash
   export PYTENSOR_FLAGS="base_compiledir=/scratch/$USER/pytensor/${SLURM_JOB_ID:-manual}_${SLURM_ARRAY_TASK_ID:-0}"
+  export TMPDIR="/scratch/$USER/tmp/${SLURM_JOB_ID:-manual}_${SLURM_ARRAY_TASK_ID:-0}"
+  mkdir -p "$TMPDIR"
   ```
 
-  Per-task dirs also eliminate compile-lock contention between array
-  elements. Sweep old dirs occasionally (`rm -rf /scratch/$USER/pytensor`).
+  **Both lines.** The compiledir redirect alone is not enough: g++ writes
+  its intermediate `.s`/`.o` files to `$TMPDIR` (default `/tmp`), and
+  node-local `/tmp` can be full or quota'd on any given node — observed as
+  `fatal error: error writing to /tmp/cc*.s: Disk quota exceeded` (2026-08-22,
+  same sweep, different node). pytensor logs rewrite-stage compile failures
+  as scary ERROR tracebacks but continues on a python fallback, so a job can
+  look alive while compiling nothing — treat any `/tmp/cc*` compile error in
+  a log as this bug. Backstop: `export TMPDIR=/scratch/$USER/tmp` in the
+  cluster `~/.bash_profile` (sbatch propagates the submission environment),
+  so even scripts that forget the preamble inherit a safe temp dir. Per-task
+  dirs also eliminate compile-lock contention between array elements. Sweep
+  old dirs occasionally (`rm -rf /scratch/$USER/pytensor /scratch/$USER/tmp`).
 
 - **`/tmp` is node-local, not shared.** A script written to `/tmp` on the
   login node is invisible to `srun`/`sbatch` on a compute node — the job
