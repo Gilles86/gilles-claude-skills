@@ -278,6 +278,12 @@ The three libraries:
   shows the canonical 3-stage fit (`fit_grid` →
   `refine_baseline_and_amplitude` → `fit`). **Never skip the refine
   step** — it makes gradient-descent warm-start dramatically better.
+- **PPCs before parameters, always.** When a bauer fit lands, the first
+  analysis is the posterior predictive check in the paradigm's native cells
+  (simulated outcomes, per-draw aggregation, band coverage printed) — NOT the
+  ELPD ladder, NOT parameter posteriors. ELPD ties can hide offsetting
+  cell-wise misfits, and group-mean parameter readouts hit the mean-parameter
+  trap. Order: PPC → ELPD → parameters. (Gilles, 2026-08-22.)
 - **bauer fits on any cluster**: set
   `PYTENSOR_FLAGS="base_compiledir=/scratch/$USER/pytensor/<jobid>_<taskid>"`
   in the SLURM script — pytensor's default `$HOME/.pytensor` cache blows
