@@ -82,6 +82,89 @@ dependency conflicts with pycortex's own numpy/scipy pins; keep
 surface-sampling scripts import-light instead so more of them can run in
 `pycortex2` too.
 
+**4. A freshly-`freesurfer.import_subj()`-ed pycortex subject has NO flat
+map — `cortex.quickflat.make_figure()` (and any `Vertex.blend_curvature()`
+static PNG) will hard-crash with `OSError` / `KeyError: 'flat'`.**
+
+Flat maps are not derived automatically from the FreeSurfer surfaces —
+they require a set of manual topological cuts (drawn in Freeview) that
+`mris_flatten` then relaxes into 2D. `import_subj()` only imports the
+fiducial/inflated/white/pial surfaces; nothing about it produces a
+`flat_{hemi}.gii`. Symptom, traced end-to-end on abstract_values sub-25/26
+(freshly ingested, never manually cut):
+
+```
+File ".../cortex/quickflat/utils.py", line 360, in _make_flatmask
+    pts, polys = db.get_surf(subject, "flat", merge=True, nudge=True)
+File ".../cortex/database.py", line 526, in get_surf
+    fnm = str(os.path.splitext(files[type][hemi])[0])
+KeyError: 'flat'
+```
+
+If the subject has never been manually cut, **don't try to route around
+this with a curvature-only quickflat render as a silent substitute** — it
+quietly produces a *different, weaker* deliverable (no flat unfolding) than
+what was asked for. Two real options:
+
+- **No flat map available yet**: fall back to inflated-surface static
+  renders instead (`nilearn.plotting.plot_surf_stat_map` straight off the
+  FreeSurfer `{hemi}.inflated` + `{hemi}.curv` files — no pycortex flat
+  cut needed, works headlessly). Say explicitly that this is inflated, not
+  flattened, and why.
+- **Generate the flat map automatically** — see below.
+
+### Auto-generating flat maps with `autoflatten` (no manual Freeview cutting)
+
+[`gallantlab/autoflatten`](https://github.com/gallantlab/autoflatten) (`pip install
+autoflatten`, **own conda env** — pulls its own jax/jaxlib, don't mix with a project's
+TF/JAX env) maps a template cut set (derived from pycortex's own fsaverage cuts) onto a
+subject via `mri_label2label`, then flattens with a JAX solver (`pyflatten`, the default
+backend — no FreeSurfer `mris_flatten` needed, only the cut *projection* does). One
+command per subject, budget real time for it (~11–12 min/hemisphere on ~150k vertices;
+`--parallel` runs both concurrently for roughly single-hemisphere wall time) — submit via
+`sbatch`/`srun`, not the login node:
+
+```bash
+autoflatten $SUBJECTS_DIR/sub-25_ses-1 --parallel --overwrite
+```
+
+Its output filename (`{hemi}.autoflatten.flat.patch.3d`) matches pycortex's naming
+convention — but **`import_flat`'s own `patch` arg already appends `.flat` internally**
+(`get_surf(..., patch+".flat")`), so pass `patch="autoflatten"`, NOT `"autoflatten.flat"`
+— the doubled form silently looks for a nonexistent `....flat.flat.patch.3d` and raises
+`FileNotFoundError`. Import directly (in the `pycortex2` env; rule 3 still applies):
+
+```python
+from cortex import freesurfer
+freesurfer.import_flat(fs_subject, patch="autoflatten", hemis=["lh", "rh"],
+    cx_subject=cx_subject, freesurfer_subject_dir=fs_subjects_dir,
+    auto_overwrite=True)   # or it blocks on an input() prompt
+```
+Confirmed working end-to-end on abstract_values sub-25 (saves to
+`<filestore>/<cx_subject>/surfaces/flat_{hemi}.gii`).
+
+**Only two FreeSurfer binaries needed — `mri_info` and `mri_label2label`** (`mris_flatten`
+is only for the alternate `--backend freesurfer`). On sciencecluster there's no bare-metal
+FreeSurfer, but fmriprep's apptainer image is an *extracted sandbox dir*, not a `.sif`, so
+its bundled binaries run directly, no `apptainer exec` needed:
+
+```bash
+export FREESURFER_HOME=/shares/zne.uzh/containers/fmriprep-25.2.3/opt/freesurfer
+export PATH=$FREESURFER_HOME/bin:$PATH
+export FS_LICENSE=$HOME/freesurfer/license.txt   # required — see gotcha below
+export SUBJECTS_DIR=/shares/zne.uzh/gdehol/ds-abstractvalue/derivatives/fmriprep/sourcedata/freesurfer  # must contain fsaverage (template cut source)
+```
+
+**Missing `FS_LICENSE` fails silently, several steps away from the real error.**
+`mri_info --version` needs no license and reports fine — false confidence that FreeSurfer
+"works." But `mri_label2label` (the actual projection) does need one; the container's
+FreeSurfer has no `opt/freesurfer/.license` (fmriprep normally supplies this via
+`APPTAINERENV_FS_LICENSE` *through* apptainer, which doesn't apply when calling the
+extracted binary directly). Without it, every cut — including the medial wall — silently
+maps to 0 vertices, so the patch keeps the full closed surface, and flattening then dies
+with an unrelated-looking `TopologyError: Euler characteristic χ = 2, expected 1`. Set
+`FS_LICENSE` explicitly before running anything beyond a bare `--version` check.
+
 ## `VertexRGB` / `blend_curvature()` vs `Vertex2D` — the alpha-channel trap
 
 Pycortex's live webgl viewer has real alpha/threshold sliders for
@@ -102,6 +185,17 @@ project's `visualize_mean_r2_fsaverage.py` does), pick your threshold
 *before* calling `show()` — there is no way to tune it afterward in the
 browser. Iterate on threshold values in Python and relaunch, rather than
 expecting a slider.
+
+**`quickflat.make_figure(..., with_colorbar=True)` on a `blend_curvature()`-baked
+image draws a colorbar, but not YOUR colorbar.** Since the data+curvature are
+already pre-blended into one flat RGB image, there's no live `vmin`/`vmax`/`cmap`
+left for pycortex to introspect — it silently falls back to some default
+scale (observed: `0–255` with a generic viridis-like swatch) that has nothing
+to do with your actual data range. This doesn't error, so it's easy to publish
+a mislabeled figure. Pass `with_colorbar=False` and annotate the real
+`vmin`/`vmax`/`cmap` as text (title/caption) instead — or build a matching
+colorbar separately, as this project's `visualize_subject_model.py
+save_colorbar_pdf()` already does.
 
 **A NaN threshold silently corrupts `blend_curvature`, and the resulting
 crash is nowhere near the actual cause.** Its alpha handling is
