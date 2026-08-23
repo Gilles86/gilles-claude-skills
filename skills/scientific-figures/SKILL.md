@@ -50,7 +50,7 @@ The things that most reliably separate a real scientific figure from a generic s
 
 1. **Despine, then offset the remaining spines.** Top and right always off. Left and bottom kept but offset outward from the data by a few points (`sns.despine(offset=5, trim=True)`). The "trim" makes the spine stop at the data's extent rather than running past it — core to the look.
 2. **Ticks point outward, short, thin.** Never inward, never long. `xtick.direction: 'out'`, `ytick.direction: 'out'`, `xtick.major.size: 3`, `xtick.major.width: 0.8`.
-3. **Helvetica throughout, generous sizes — ~8 pt tick labels, ~9–10 pt axis labels, ~9–10 pt annotations.** Helvetica specifically — not "a sans-serif", not Arial as a substitute. If it isn't installed, install it or use a metric-compatible alternative (Helvetica Neue, TeX Gyre Heros); fall back to Arial only as a last resort and flag the substitution. Never the platform default. Err *larger* — comfortably readable labels look confident, minimum-squeezed labels look cramped. No serifs anywhere.
+3. **Helvetica throughout, sized to the 5–8 pt journal ceiling — ~7 pt tick labels, ~8 pt axis labels, ~7–8 pt annotations.** Verified against the target journals directly: Nature Communications' submission guide states the "optimum font size is between 5pt and 8pt" at final print size; Neuron/Cell Press is consistently reported at the same range (cell.com blocks automated verification, but the number recurs independently). Err toward the larger end (7–8, not 5) within that ceiling — 9–10pt, this section's old recommendation, is out of spec and gets flagged or rescaled at production. Helvetica specifically, not "a sans-serif" or Arial; install it or use a metric-compatible alternative (Helvetica Neue, TeX Gyre Heros) if unavailable, Arial only as a last resort with the substitution flagged. No serifs.
 4. **Direct-label conditions; avoid legends.** A legend is a key the reader must consult — it pulls the eye off the data and reintroduces caption-dependence. Place condition labels directly on the data, at the line's right endpoint or next to the relevant cluster, in the data's color. Use `ax.text` or `ax.annotate`. If a legend is unavoidable (too many conditions to direct-label), use `frameon=False` and keep it off the data.
 5. **Figure size in physical units, set first, never changed by export.** Points only mean something relative to the *rendered* size: a 10 pt label looks right at 3.5" wide, small at an auto-sized 6.4", tiny on a 12" poster panel. Pick the physical size first — single column ≈ 3.5" (88 mm), 1.5-column ≈ 5" (127 mm), double column ≈ 7.25" (180 mm), poster panels 8–16" — then proportion everything to it via `figsize=(w, h)`. Never resize the PDF afterwards (`\includegraphics[width=...]`); regenerate at the new width instead.
 6. **Vector output, fonts as text.** Save PDF or SVG with `rcParams['pdf.fonttype'] = 42` and `rcParams['ps.fonttype'] = 42` so fonts stay editable in Illustrator rather than converted to paths.
@@ -77,12 +77,12 @@ Avoid by default:
 - **`sns.violinplot`** — kernel-smoothing artifacts can mislead; if the distribution matters, show points or a histogram
 - **`sns.heatmap`** with annotations inside cells — fine for very small matrices, but for anything larger drop to `ax.imshow` and add a colorbar manually for tighter control
 
-### A note on FacetGrid and the despine offset
+### A note on FacetGrid/catplot/relplot/displot and the despine offset
 
-`sns.despine()`'s `offset`/`trim` don't propagate cleanly through `FacetGrid`'s built-in despining. Pass `despine=False` to FacetGrid, then call `sns.despine` on the figure afterwards, or the offset is ignored on some axes:
+Just call `sns.despine(fig=g.figure, offset=5, trim=True)` after plotting — no special handling needed. Verified against installed seaborn 0.13.2: `FacetGrid`/`catplot`/`relplot`/`displot` all pre-despine top/right internally, and `offset`/`trim` propagate correctly to every panel with zero extra steps. **`despine=False` only exists on `FacetGrid`** — passing it to `catplot`/`relplot`/`displot` raises `AttributeError` (confirmed by triggering it). If a different seaborn version ever needs a workaround, verify first — this isn't reproducible in the current one.
 
 ```python
-g = sns.FacetGrid(df, col='condition', height=2.2, aspect=1.0, despine=False)
+g = sns.FacetGrid(df, col='condition', height=2.2, aspect=1.0)
 g.map_dataframe(sns.lineplot, x='contrast', y='response', errorbar=('se', 1))
 g.set_titles('{col_name}')  # short panel titles, capitalized first letter
 sns.despine(fig=g.figure, offset=5, trim=True)
@@ -100,12 +100,12 @@ mpl.rcParams.update({
     # Typography — Helvetica is the house font, not a fallback
     'font.family': 'Helvetica',
     'font.sans-serif': ['Helvetica', 'Helvetica Neue', 'TeX Gyre Heros', 'Arial'],
-    'font.size': 9,
-    'axes.labelsize': 10,
-    'axes.titlesize': 10,
-    'xtick.labelsize': 8,
-    'ytick.labelsize': 8,
-    'legend.fontsize': 8,
+    'font.size': 7,          # Nature Comms / Neuron ceiling is 5-8pt at final print size — see non-negotiable 3
+    'axes.labelsize': 8,
+    'axes.titlesize': 8,
+    'xtick.labelsize': 7,
+    'ytick.labelsize': 7,
+    'legend.fontsize': 7,
     'mathtext.fontset': 'stixsans',  # if mathtext is used at all, keep it sans-serif
 
     # Axes
@@ -144,11 +144,11 @@ mpl.rcParams.update({
     'savefig.bbox': 'tight',
     'savefig.pad_inches': 0.02,
 })
-
-sns.set_context('paper')  # don't use 'notebook' or 'talk' for paper figures
 ```
 
-After plotting, always finish with `sns.despine(offset=5, trim=True)`. With `FacetGrid`/`catplot`, pass `despine=False` initially and call it afterwards — offset/trim don't apply correctly through the high-level wrappers.
+**Don't add `sns.set_context('paper')` after this block — verified it silently overwrites it.** `set_context` doesn't scale relative to rcParams already in place, it *replaces* them with seaborn's own context defaults: diffing every key before/after, 13 of 15 changed, including the non-negotiables (`axes.linewidth` 0.8→1.0, `xtick.major.size` 3→4.8). The block above already sets everything that matters — `set_context` is redundant and actively harmful given how naturally it reads placed right after it. For talks/posters, scale the numbers in the dict directly (see physical-size section) instead of `set_context('talk')`.
+
+After plotting, always finish with `sns.despine(offset=5, trim=True)` — this applies cleanly to figure-level wrappers (`FacetGrid`, `catplot`, `relplot`, `displot`) too, no extra steps needed; see the note below.
 
 ## Color
 
@@ -173,7 +173,7 @@ Default seaborn/matplotlib palettes (`tab10`, `deep`, `Set1`) are a tell that no
 **Across both:**
 - Use color to encode a variable, not to decorate. If two lines differ categorically and could be told apart by linestyle (solid vs dashed) or marker shape, do that and keep color free for a continuous variable.
 - **Color is semantic across the whole figure, not just within a panel.** Once a hue means a condition in one panel (blue = cue-left in panel a), the reader reads it that way everywhere. If another panel collapses across that condition (grand-mean curve, aggregate bar), do **not** reuse the hue — switch to neutral gray, or the aggregate falsely reads as "cue-left data". In reverse: don't introduce a new hue for a condition that already has one elsewhere. Color persistence across panels is one of the strongest correctness signals in a paper figure.
-- Test by converting to grayscale (`convert -colorspace Gray fig.pdf fig_gray.pdf`). If conditions become indistinguishable, the encoding leans too hard on hue — add linestyle or marker variation.
+- Test by converting to grayscale (`magick -colorspace Gray fig.pdf fig_gray.pdf`; the older `convert -colorspace Gray ...` still works on most installs but is deprecated as of ImageMagick 7 — verified both produce the same output, `magick` is the one that won't eventually break). If conditions become indistinguishable, the encoding leans too hard on hue — add linestyle or marker variation.
 - Avoid pure red and pure green together (deuteranopia). The hand-picked palette above is safe.
 
 ## Error and uncertainty
@@ -181,7 +181,7 @@ Default seaborn/matplotlib palettes (`tab10`, `deep`, `Set1`) are a tell that no
 How uncertainty is drawn is one of the strongest style signals.
 
 - **Continuous predictors (psychometric / tuning curves)**: shaded ±1 SEM bands behind the line, same hue, alpha ~0.2–0.3, no edge. The default for `lineplot` with `errorbar=('se', 1)`. Confirm the band is behind the line (`zorder`), not on top.
-- **Discrete conditions (bar / point plots)**: thin error bars with **no caps** or very short caps (`capsize=0` or `capsize=2`), `errwidth=0.8`. Default matplotlib's capped T-bars look amateurish at publication size.
+- **Discrete conditions (bar / point plots)**: thin error bars with **no caps** or very short caps (`capsize=0` or `capsize=2`), `err_kws={'linewidth': 0.8}`. Default matplotlib's capped T-bars look amateurish at publication size. (Not `errwidth=0.8` — confirmed against the installed seaborn: it throws a `FutureWarning` and is slated for removal in 0.15; `err_kws` is the current API and produces an identical result with no warning.)
 - **Central tendency: mean ± SEM is the conference default** (VSS, OHBM, SfN — audiences read error bars as SEM unless told otherwise). Use it by default. But SEM is only meaningful when the **mean** is — i.e., when a few extreme outliers don't dominate. For heavy-tailed estimates (e.g., attention-field gains in low-SNR ROIs blowing up to |g| > 5 or 10), the mean gets pulled off the visible swarm and SEM balloons. Two honest fixes:
   - **Trim then mean ± SEM** with a fixed absolute or per-ROI cutoff (e.g., `|value| > 4`, or "drop subjects > 3 × IQR from the median"). Annotate `n_kept (−k_dropped)` under each x-tick AND state the trim rule in a small in-figure note (`Mean ± SEM · outliers |g| > 4 excluded`) so the audience doesn't read default-SEM into trimmed-SEM. The talk-friendly choice: expected stat, labeled deviation.
   - **Median + bootstrap 95% CI** (or HDI) — robust to outliers, matches the visible swarm exactly. Cost: the audience must read the label or they'll assume SEM. Only worth it if outliers are a substantive part of the story.
@@ -220,7 +220,14 @@ in [references/posterior_predictive_checks.md](references/posterior_predictive_c
 - **The data extremes belong on the axis.** Matplotlib defaults pick "round" interior ticks (10, 15, 20) and skip the actual endpoints (5 and 25), forcing the reader to infer the range. Always include the min and max as explicit ticks — for a 5–25 numerosity range, use `[5, 10, 15, 20, 25]`, not `[10, 15, 20]`. Same for any psychophysics axis (contrast levels, spatial frequencies, n-back levels): the extreme stimulus values are part of the design.
 - **Align y-axes across panels that show the same quantity.** A row/column all plotting the same thing (Pearson r, proportion, cvR², SD) needs a shared y-scale, or the reader mis-reads a panel-specific "tall bar" as a real effect when it's just an autoscaled range. `sharey="row"` is the easy fix. *Exception*: a metric on a clearly different scale (a "delta"/"specificity" row 5–10× smaller than the panels feeding it) gets its own zoomed range — but say so in the row label, never autoscale silently. Compute y-limits **after** aggregation so they fit the rendered data, not pre-aggregated extremes.
 - **Don't repeat N across panels if it's the same everywhere.** If every panel uses the same subjects, the N=… label belongs in one corner of the first panel (or the caption). Repeated N labels are noise.
-- **Log axes**: when a variable spans orders of magnitude (contrast, frequency, numerosity), use log scale. Ticks at decadal values, minor ticks at 2, 5 between, minor tick labels hidden. Consider explicit `ScalarFormatter` to avoid scientific notation for values 0.01–100.
+- **Log axes**: when a variable spans orders of magnitude (contrast, frequency, numerosity), use log scale. Minor-tick labels are hidden by default — nothing to do there. Two things do need explicit setup: the default minor-tick locator places ticks at *every* subdivision (2–9), not just 2 and 5; and plain `ScalarFormatter()` doesn't work on a log axis for sub-1 values — tested directly, it collapsed 0.01/0.1 to the label `'0'` even with `set_scientific(False)`. Use a `FuncFormatter` on explicit ticks instead:
+  ```python
+  ax.set_xscale('log')
+  ax.set_xticks([0.01, 0.1, 1, 10, 100])
+  ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{x:g}'))
+  ax.xaxis.set_minor_locator(mticker.LogLocator(base=10, subs=[2, 5]))
+  ax.xaxis.set_minor_formatter(mticker.NullFormatter())
+  ```
 - **Trim the axis to the data.** `sns.despine(trim=True)` does most of this; verify the spine ends at the last tick, not past it.
 - **Axis labels are short.** "Contrast" not "Stimulus contrast (Michelson)"; units in parentheses, qualifier in the caption: `Contrast (%)`, `Firing rate (spikes/s)`, `Reaction time (s)`, `WTP (CHF)`. See capitalization rule below.
 - **Drop the axis label when the ticks already name the axis.** Self-describing categorical ticks — `["NPCl", "NPCr"]`, `["Mix shared-RF", "Sum", ...]`, `["sub-01", "sub-02", ...]`, `["V1", "V2", "V3"]` — make a category-type label ("ROI", "Model", "Subject", "Area") redundant. The ticks ARE the label. Default to **omitting categorical axis labels, adding one only when the category isn't obvious** (e.g. bare numeric ticks the reader can't interpret). When in doubt, set `""` and check whether anything was lost — usually nothing.
@@ -237,30 +244,40 @@ Small but one of the strongest readability signals — mixed capitalization look
 
 ## In-panel annotations: guide the reader
 
-In-panel annotations are how the figure carries its message without the caption. Don't make the reader hunt for the effect — point at it. The house style: short text labels with a thin curved arrow connecting the label to the relevant data feature. "Attention shifts the peak", "Model fit", "Stimulus onset", "Chance", "Inflection point". Two or three words. The figure becomes self-narrating: a reader skimming only the panels should extract the core finding from the annotations alone.
+In-panel annotations are how the figure carries its message without the caption. Don't make the reader hunt for the effect — point at it. The house style: short text labels with a bold curved arrow connecting the label to the relevant data feature. "Attention shifts the peak", "Model fit", "Stimulus onset", "Chance", "Inflection point". Two or three words. The figure becomes self-narrating: a reader skimming only the panels should extract the core finding from the annotations alone.
+
+**On line weight: journals set a survival floor (~0.25–0.5pt, per AIAA/AMS specs), not a style target.** Below that, a line risks vanishing under print reduction — Nature itself publishes no line-weight number at all. Sit comfortably above the floor: `lw≈1.0–1.3` for annotation arrows, not hugging the edge.
 
 Use `ax.annotate` — it gives arrow plus text positioning in one call:
 
 ```python
 ax.annotate(
     'Attention shifts peak',
-    xy=(peak_x, peak_y),               # the data point being pointed at
-    xytext=(peak_x + 0.5, peak_y + 0.3),  # where the text sits
-    fontsize=7,
+    xy=(peak_x, peak_y),                  # the data feature being pointed at
+    xytext=(peak_x - 4.6, peak_y + 0.55), # where the text sits
+    fontsize=8,
     ha='left', va='center',
     arrowprops=dict(
-        arrowstyle='-',                 # plain line, no arrowhead; or '->' for a small head
-        connectionstyle='arc3,rad=0.2', # gentle curve — flat lines look stiff
-        color='0.3',
-        lw=0.6,
+        arrowstyle='-|>',                      # small FILLED head — see below for why not '->'
+        connectionstyle='angle3,angleA=0,angleB=60',  # leaves flush with the text, curves down onto the target — see below
+        color='0.2',
+        lw=1.2,
+        mutation_scale=9,                      # arrowhead size — filled heads read right smaller than open ones
+        shrinkA=3,                             # small gap between arrow tail and text
+        shrinkB=12,                            # bigger gap between arrowhead and the target — never let it touch
+        relpos=(1.0, 0.5),                     # anchor tail at the text's right edge, vertical middle — see below
     ),
 )
 ```
 
-A few rules:
-- **Curved, not straight.** `connectionstyle='arc3,rad=0.2'` gives the gentle hand-drawn arc that's a signature of the style. Adjust `rad` (0.1–0.3, signed) so the arrow doesn't cross data.
-- **Thin and gray, not black.** `color='0.3'` or `'0.4'`, `lw=0.6`. Support the data, don't compete.
-- **No arrowhead, or a very small one.** A plain line (`arrowstyle='-'`) often reads cleaner than `'->'`. Reserve arrowheads for when pointing direction is genuinely ambiguous.
+A few rules, worked out against a rendered comparison grid rather than assumed:
+
+- **Filled arrowhead (`-|>`), not open (`->`).** The open chevron's two barb lines can visually fuse with a curved shaft near the tip (one barb ends up nearly collinear with the incoming curve, reading as a lopsided blob) — confirmed at large scale. A filled triangle is one closed shape, so the artifact can't happen. `mutation_scale≈8–10` for filled (the open style's `10–13` looks undersized once switched). Avoid `'fancy'`/tapered styles — they read as cartoon, not scientific, at any real scale.
+- **`angle3`, not `arc3`, for the curve.** `connectionstyle='angle3,angleA=A,angleB=B'` fixes the text-departure angle independently of the arrival angle at the target — `arc3` always has a slight curl at the text since its start tangent depends on both `rad` and the geometry, confirmed on a blank-canvas render. Set `angleA=0` for text left of the target (`180` right, `90`/`-90` below/above — a fixed constant, not re-derived per layout). Tune `angleB` (`45`–`90`) so the curve *lands on* the target with a downward final motion, not reaching up from underneath — `angleB>100` hooks under it. No style guide documents this; resolve by eye against a render. `arc3` is a fallback only.
+- **The curve is opportunistic — only where there's open space to dive through.** A flush-horizontal departure plus a dive routes straight through any data sitting at the label's height, which is the default outcome whenever the target is on a busy part of a curve (e.g. a threshold mid-slope). No `angleB` fixes that geometry — drop `connectionstyle` for a plain straight connector instead, and reserve the dive for isolated peaks, plateaus, or clusters. Always check against the **real data**: the same angles that work in one panel can cross data in the next, since local data shape and axis aspect ratio both change what an angle draws as.
+- **[`adjustText`](https://github.com/Phlya/adjustText) finds a collision-free label position — not a collision-free connector.** `adjustText(texts, x=..., y=..., target_x=[...], target_y=[...], arrowprops=dict(...))` repels the label from data/other labels and draws the connector; pass our `arrowprops` recipe to keep the house look. It only optimizes the text's bounding box, so a curved connector on top can still cross data even once the text itself is clear — still check the rendered result by eye.
+- **Never let the arrowhead touch the target.** Gap it with `shrinkB`: `≈8–12` for an isolated point, `≈4–7` for a cluster/group (its own spread already reads as a buffer, so a full 12pt gap ends up pointing over it). Matches leader-line convention in cartography and technical drawing (ISO 128 / ASME Y14.5) — a leader always stops short of the symbol it names.
+- **Anchor the tail at the text's edge, not its center.** Default `relpos=(0.5, 0.5)` attaches under the middle of the last word, which combined with a rising curve makes the arrow look like it launches from nowhere. Set it to the bbox edge facing the target: `(1.0, 0.5)` text-left, `(0.0, 0.5)` text-right, `(0.5, 0.0)`/`(0.5, 1.0)` below/above — the line should leave *next to* the label at the same height, not erupt from inside it.
 - **Short text, capitalized first letter, no terminal punctuation.** "Model fit", not "model fit" or "Best-fitting model prediction." More than four or five words belongs in the caption.
 - **Place text off the data.** Whitespace upper-right or lower-left is usually available. If the panel is dense, use a leader line into the margin.
 - **One to three annotations per panel, maximum.** More and you've stopped guiding and started cluttering.
@@ -277,7 +294,7 @@ Use annotations to label: the key effect ("Peak shift", "Saturating nonlinearity
 
 Real papers have multi-panel figures. Default to `plt.subplots` for simple grids, `matplotlib.gridspec` when panels differ in size or share complex relationships.
 
-- **Panel letters: a, b, c, d, …** (lowercase) in bold sans-serif, slightly larger than axis labels (10–12 pt), at the top-left **outside** the axes: `ax.text(-0.15, 1.05, 'a', transform=ax.transAxes, fontsize=12, fontweight='bold', va='bottom', ha='right')`. Same position across all panels — pick coordinates, reuse. Lowercase is the Nature/Nature Comms house style and the default here; uppercase (A, B, C) is the older Science / J Neurosci convention — use only when the target journal requires it. Panel letters are the **one exception** to "every piece of text starts capitalized" — caption references match ("see panel a", not "panel A").
+- **Panel letters: a, b, c, d, …** (lowercase) in bold sans-serif, at the top-left **outside** the axes: `ax.text(-0.15, 1.05, 'a', transform=ax.transAxes, fontsize=8, fontweight='bold', va='bottom', ha='right')`. `fontsize=8` matches Nature's own spec verbatim ("8-pt bold... a, b, c"); bold is what distinguishes the letter now that axis labels are also 8pt, not extra size. Same position across all panels — pick coordinates, reuse. Lowercase is Nature/Nature Comms house style; uppercase (A, B, C) is the older Science/J Neurosci convention — use only when the target journal requires it. The **one exception** to "every piece of text starts capitalized" — captions reference "panel a", not "panel A".
 - **Don't waste space.** `plt.tight_layout()` is a reasonable start; `constrained_layout=True` at figure creation is better. If panels share an axis, use `sharex=True`/`sharey=True` and remove redundant tick labels.
 - **Align axes across panels.** Two panels showing the same quantity (both firing rate) need the same y-range *and* the same y-label position. Eyes shouldn't recompute scale across panels.
 - **Aspect ratio per panel.** Most data panels look right between 1:1 and 4:3 (width:height); time-series wider (2:1 or 3:1). Avoid tall-thin panels unless plotting something genuinely vertical (population stack, anatomical depth).
@@ -371,6 +388,6 @@ A figure passing these five is done. Spines, palettes, and ticks earn the figure
 Style serves communication, not the reverse. Deviate when:
 - The data genuinely requires a non-standard encoding (circular variables → polar plot, rare as polar plots are in this tradition)
 - The journal's style guide conflicts — follow the journal
-- A talk audience won't read 7pt labels — scale up via `sns.set_context('talk')` rather than fighting the rcParams
+- A talk audience won't read 7pt labels — scale the physical-size table's talk numbers (14–18 pt) directly into the rcParams dict for a fresh talk-sized figure. Don't reach for `sns.set_context('talk')` instead — same clobbering problem as `'paper'` above.
 
 Document the deviation briefly in a code comment so the next person (or future you) knows why.

@@ -62,6 +62,10 @@ exec watchexec --quiet --postpone --watch "$FIGDIR" --exts py --debounce 300ms -
 ```bash
 ls "$FIGDIR"/*.py | entr -p "$0" --once    # -p: run on change, not at startup
 ```
+Needs a real controlling terminal — confirmed Homebrew `entr` 5.7 refuses to
+start under a non-interactive wrapper (`entr: unable to get terminal
+attributes, use '-n' to run non-interactively`). Run it in its own terminal
+like the `watchexec` variant above, or add `-n` if launching from a script.
 
 ---
 
@@ -107,6 +111,7 @@ echo "(no output above = all Helvetica)"
 
 Page size (mm) + RGB, with `pypdf`:
 ```python
+import glob
 import pypdf
 PT_PER_MM = 72 / 25.4
 for path in sorted(glob.glob(f'{FIGDIR}/*.pdf')):

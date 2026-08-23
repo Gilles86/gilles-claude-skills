@@ -139,14 +139,24 @@ Direct-label conditions on the data (no legend) per the house style.
     → population `{param}_mu` coefficients (with regressor coords, e.g.
     `width_z`, `C(group)[..]`) + `_sd` spreads; `get_subjectwise_parameter_estimates(idata)`
     → per-subject draws. Use these instead of re-parsing summary TSVs.
-  - **DO NOT** pass `save_p_choice=True` / `save_trialwise_estimates=True` to
-    `build_estimation_model` just to get a PPC: that writes a deterministic
-    **per trial × per draw × per chain** into the idata and balloons it to GBs
-    on trial-rich datasets. Recompute trialwise quantities **on demand** with
-    `ppc`/`predict` from the compact trace instead.
+  - **DO NOT** pass `save_p_choice=True` to `build_estimation_model`, or
+    `save_trialwise_estimates=True` to the regression model constructor
+    (e.g. `PsychometricRegressionModel(...)` — checked against `bauer/core.py`
+    and `bauer/models/ddm.py`: the two flags live on different objects, not
+    both on `build_estimation_model`), just to get a PPC: either one writes a
+    deterministic **per trial × per draw × per chain** into the idata and
+    balloons it to GBs on trial-rich datasets. Recompute trialwise quantities
+    **on demand** with `ppc`/`predict` from the compact trace instead.
 - **PyMC**: `pm.sample_posterior_predictive(idata)` →
-  `idata.posterior_predictive[<obs>]` with dims (chain, draw, obs);
-  stack `(chain, draw)` → `pp_draw` and `.to_dataframe()`.
+  `idata.posterior_predictive[<obs>]` with dims (chain, draw, obs) →
+  `.to_dataframe(name='simulated').reset_index()` directly, **no** `.stack((chain,
+  draw))` first — verified that raises `ValueError: cannot insert draw,
+  already exists` (xarray puts `chain`/`draw` in the stacked frame both as
+  index levels and as their own columns, so `.reset_index()` collides with
+  itself). The unstacked call gives columns `chain, draw, obs, simulated`
+  directly; group by `['chain', 'draw']` (or add
+  `df['pp_draw'] = df.groupby(['chain', 'draw']).ngroup()` for a single id)
+  instead of relying on a combined `pp_draw` from the stack.
 - 200 pp draws is plenty for a smooth 95% band; more just slows the
   plot.
 

@@ -79,20 +79,24 @@ import xarray as xr
 # Suppose `idata` is the InferenceData returned by bauer/PyMC, and `mu` is the
 # posterior variable indexed by an x-coordinate (e.g., stimulus level).
 post_mu = idata.posterior['mu']                      # dims: chain, draw, x
-df_post = (
-    post_mu
-    .stack(sample=('chain', 'draw'))                 # collapse chain × draw
-    .to_dataframe(name='mu')
-    .reset_index()
-)
-# df_post now has columns: x, chain, draw, sample, mu — long form, plot-ready
+df_post = post_mu.to_dataframe(name='mu').reset_index()
+# df_post now has columns: chain, draw, x, mu — long form, plot-ready.
 ```
+
+Don't `.stack(sample=('chain', 'draw'))` before `.to_dataframe()` — verified this
+raises `ValueError: cannot insert draw, already exists`. After stacking, xarray
+puts `chain`/`draw` into the frame both as index levels of the new `sample`
+dim *and* as their own non-dimension coordinate columns, so `.reset_index()`
+tries to create columns that already exist. Skipping `.stack()` entirely
+avoids the collision and needs no extra step: seaborn aggregates over any
+column not mapped to `x`/`y`/hue, so having separate `chain`/`draw` columns
+instead of one combined `sample` column changes nothing downstream.
 
 For posterior *predictive* draws over a fine x-grid (e.g., a smooth
 psychometric curve with credible bands), generate predictions at,
 say, 200 x-values inside the model and run the same conversion.
-Seaborn will aggregate over the `sample` index automatically when you
-map `x` and `y='mu'`.
+Seaborn aggregates over `chain` and `draw` automatically when you
+map `x` and `y='mu'` — they're just ordinary non-aesthetic columns.
 
 ## Discrete posteriors (per-condition parameter posteriors)
 
