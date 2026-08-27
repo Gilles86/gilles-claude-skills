@@ -17,15 +17,34 @@ this curve+band cover those points." A PPC where the model is drawn as
 prominent points and the data as a faint line has the visual hierarchy
 backwards and reads as if the simulation were the measurement.
 
-- **Data**: markers (filled circles), the strongest ink. If the data
-  summary itself has uncertainty (across-subject SEM of a binned
-  proportion), thin error bars on the points are fine — but keep them
-  visually subordinate to the model band.
+- **Data**: markers (filled circles), the strongest ink, and **no error
+  bars or shaded band** — see "Don't draw the noise twice" below.
 - **Model**: posterior-predictive **median** as a line, **95% HDI** as
   a shaded band behind it (`alpha` ~0.2–0.25, no edge), optionally a
   darker **50% HDI** inner band. Same hue as the condition.
 - One color per condition, consistent with the rest of the figure
   (color is semantic across panels — see the main skill).
+
+## Don't draw the noise twice
+
+**The observed points get no SEM band, bootstrap band, or error bars.** The
+predictive band already contains the measurement noise: it is built by
+simulating whole datasets with the same trial structure, so it *is* the
+distribution of datasets like the one that was collected. The observed summary
+is a single realisation to be checked against that distribution — not a second
+estimate with its own uncertainty to be reconciled with the first.
+
+Drawing both double-counts the same noise, and it does so in the direction that
+hides misfit: two overlapping bands nearly always touch somewhere, so a genuine
+discrepancy reads as "the intervals overlap, fine". A PPC is a check, and the
+check is *is the point inside the band* — adding ink around the point makes that
+question unanswerable by eye.
+
+The exception that proves it: if the predictive band was built the narrow way
+(from predicted probabilities/means, parameter uncertainty only — the bug in
+question 1 below), then it does NOT contain measurement noise, and people reach
+for observed error bars to compensate. Fix the band instead; don't paper over a
+too-narrow band with a second one.
 
 ## The point of a PPC is to expose misfit, not hide it
 
@@ -128,6 +147,20 @@ Direct-label conditions on the data (no legend) per the house style.
 
 ## From a fit to PPC draws
 
+- **bauer, estimation models** (`EstimationBaseModel` and subclasses —
+  `EfficientPerceptionModel`, `EfficientValuationModel`,
+  `SequentialEfficientCodingModel`): **do not use `model.ppc()` for the band.**
+  Checked against `bauer/estimation.py` (2026-08): it samples only
+  `predicted_mean` / `predicted_sd`, its `n_ppc_samples` argument is unused,
+  and its "Optionally simulates responses" docstring describes a path that is
+  not implemented. A band built from what it returns is the parameter-only
+  band question 1 warns about. Use `model.simulate(paradigm, params,
+  n_samples=1)` once per posterior draw instead — it inverse-CDF samples the
+  per-trial response distribution and returns a `simulated_response` column.
+  Caveats: it draws through the **global** numpy RNG (seed with
+  `np.random.seed`), and it joins the paradigm back on, so the observed
+  `response` column rides along and collides if you rename the simulated one
+  to `response` — drop it first.
 - **bauer**: `model.ppc(paradigm, idata, n_posterior_samples=200)`
   returns a long DataFrame indexed by (trial keys, pp sample) with a
   `simulated_choice` (and `simulated_rt` for DDM/RDM) column — already
