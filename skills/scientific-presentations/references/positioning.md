@@ -2,7 +2,9 @@
 
 The reflex when something won't sit where you want is to fight the markdown flow. Don't. MARP gives you a **fixed pixel canvas** and full CSS — the fast path is to drop one absolutely-positioned `<div>` and type coordinates while watching the live preview. This file is the positioning *toolkit* (how to place things); its sibling **`marp_layout_gotchas.md`** is the *troubleshooting* list (what silently fails and why). Read both — and when a position/size doesn't take, the gotchas file is where the answer usually is.
 
-**Critical constraint that shapes everything here:** `<!-- _class: foo -->` does **not** survive static export — MARP emits it as `data-class="foo"`, so a `section.foo {}` rule never matches in the exported HTML/PDF (see `marp_layout_gotchas.md`). So none of the patterns below pin layout to a section class. To override section CSS for one slide, use `<style scoped>…</style>` (confirmed working); for reusable layout, put the class on a `<div>` (div/img classes survive). Verify any tricky slide by rendering its PNG (`./build.sh png`) and *looking* — don't trust that the markup did what you meant.
+**Correction to an earlier draft of this file:** it claimed `<!-- _class: foo -->` does *not* survive static export. **That was wrong.** Marpit applies the directive with `attrJoin('class', …)`, so `_class: foo` emits a real `class="foo"` on the `<section>` and `section.foo {}` *does* match in the exported HTML/PDF. The patterns below still prefer `<style scoped>` and div classes: for a **one-slide** override a scoped style is more targeted and verified not to leak (marp stamps a unique `data-marpit-scope-…` attribute on that section and rewrites the selector to match only it). Reach for `_class` when the same section-level layout recurs across several slides.
+
+**Do not verify by rendering.** Gilles keeps `./build.sh watch` open in a browser and *he* is the visual verifier — a marp process of yours steals his Chrome and stalls his preview. Type a coordinate, save, ask him to look. See **`verification.md`**.
 
 ## The one fact that makes positioning tractable: the slide is a fixed pixel canvas
 
@@ -21,7 +23,7 @@ You author in this fixed space. `top: 360px; left: 640px` is the true center of 
   ```markdown
   <style scoped>section { padding: 0 !important; }</style>
   ```
-  Cleaner for full-bleed figure slides — prefer this. (Do **not** reach for `<!-- _class: bleed -->`; a section `_class` won't match a `section.bleed{}` rule in static export — see the critical constraint above.)
+  Cleaner for full-bleed figure slides — prefer this. (A `<!-- _class: bleed -->` + `section.bleed{}` rule also works, contrary to the old note here; use it only if several slides need the same treatment.) The same trick gives a title slide extra room: `<style scoped>section { padding-top: 28px !important; padding-bottom: 28px !important; }</style>`.
 
 Other gotchas: **units are mandatory** (`760px`, never `760`); raw HTML only renders with `enableHtml` on (it is, in the marp env / VS Code); `section::after` is reserved by MARP for the page number, so use `::before` for your own pseudo-element overlays.
 
@@ -166,11 +168,11 @@ For N figure panels in a clean grid, a CSS-grid class beats nested `.two-col`. T
 | Text legible over a busy figure | `![bg brightness:.5 blur:3px]` + floated box w/ `z-index` (§3) |
 | Caption over a split background | `section::before` + `<style scoped>` (§6) |
 | Logo / source tag in a corner | alt-text class `![top-right ...]` (§5) |
-| N-panel figure grid | CSS-grid `_class` (§7) |
+| N-panel figure grid | CSS-grid class on a wrapper `<div>` (§7) |
 
 ## Tooling
 
-There is **no drag-to-position** — MARP is markdown/CSS-first by design. The practical substitute is the **Marp for VS Code** split preview: type a coordinate, watch it move, repeat. `./build.sh watch` gives the same live loop in a browser. Mental ruler: center `640,360`; with gaia padding the usable inner box is `70→1210 × 70→650`.
+There is **no drag-to-position** — MARP is markdown/CSS-first by design. The practical substitute is a live preview: `./build.sh watch` in a browser, or the **Marp for VS Code** split preview. In practice *you* type the coordinate and *Gilles* watches it move; iterate through him rather than rendering. Mental ruler: center `640,360`; with gaia padding the usable inner box is `70→1210 × 70→650`.
 
 ## Sources & credits
 

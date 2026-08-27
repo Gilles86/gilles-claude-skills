@@ -26,11 +26,22 @@ case "${1:-html}" in
 esac
 ```
 
+## Who runs which of these
+
+**`./build.sh watch` is Gilles's**, and it is usually already running. He keeps
+`http://localhost:8080/<deck>.md` open and it reloads on save — he is the visual verifier.
+**You do not run marp at all in the normal loop.** Every marp process grabs the same
+headless Chrome as his watch server, and the contention is brutal (6 concurrent processes →
+5+ minute hangs; one stuck for over an hour). Full rules, `ps`/`pkill` incantations, and
+the cheap non-rendering checks that replace a render: **`verification.md`**. Read it before
+typing `marp`.
+
 Usage:
-- `./build.sh` or `./build.sh html` — render HTML (self-contained; good default).
+- `./build.sh` or `./build.sh html` — render HTML (self-contained; good default). **~1.4 s** on a clean run.
 - `./build.sh pdf` — PDF for sharing / backup at the podium.
 - `./build.sh pptx` — PowerPoint if a venue requires it.
-- `./build.sh watch` — live server with auto-reload while editing (the iterate loop).
+- `./build.sh png` — one PNG per slide. **Minutes** for a 47-slide deck. Almost never what you want; render a 6-slide excerpt deck instead.
+- `./build.sh watch` — live server with auto-reload while editing (the iterate loop). Gilles's terminal, not yours.
 - `./build.sh all` — html + pdf.
 
 Notes:

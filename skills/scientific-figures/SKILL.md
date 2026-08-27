@@ -207,12 +207,17 @@ posteriors, and caption language) live in
 **Posterior predictive checks** (model-simulated data over observed —
 psychometric/chronometric curves, RT distributions, quantile-probability
 plots) are a different panel with their own conventions: data as
-anchoring markers, model as line + HDI band (never reversed), the band
-built by summarizing **per posterior-predictive draw before** taking the
-HDI so predictive uncertainty is preserved. Full recipes — the bauer
-`model.ppc` / PyMC `sample_posterior_predictive` workflow, binning,
-per-subject vs group PPCs, the "a PPC must be able to fail" rule — live
-in [references/posterior_predictive_checks.md](references/posterior_predictive_checks.md).
+anchoring markers with **no error bars**, model as line + HDI band (never
+reversed), coverage stated on the panel, and a binning resolution that
+still lets the check fail. Layout recipes, panel types and caption language
+live in [references/posterior_predictive_checks.md](references/posterior_predictive_checks.md).
+
+How the band is *computed* is not a figure question and is easy to get
+wrong in a way that makes every model look broken — simulated outcomes vs
+predicted means, per-draw aggregation, the coverage test, the
+mean-parameter trap. That lives in the **bayesian-workflow** skill
+(`references/ppc_construction.md`). Load it whenever you are the one
+building the band, not just drawing it.
 
 ## Axes: the details that matter
 

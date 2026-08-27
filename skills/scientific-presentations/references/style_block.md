@@ -67,6 +67,11 @@ style: |
   .two-col--70-30 > .col:first-child { flex: 7 1 0% !important; }
   .two-col--70-30 > .col:last-child  { flex: 3 1 0% !important; }
   .col img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  /* Composite transparent figures onto white so nothing picks up the slide tint.
+     NB: this is exactly why height-sizing a LANDSCAPE figure inside a column shows
+     white letterbox bands — size landscape figures by width. See marp_layout_gotchas.md. */
+  section img { background-color: #ffffff; }
+  img.logo { background: transparent !important; }
   .vcenter {
     display: flex !important; flex-direction: column !important;
     justify-content: center !important;
@@ -79,16 +84,39 @@ style: |
   .text-twenty     { font-size: 20px !important; line-height: 1.3; }
   .text-tiny       { font-size: 16px !important; line-height: 1.3; }
   .code-small      { font-size: 14px !important; }
+  .code-small pre, .code-small code { font-size: 15px !important; line-height: 1.35 !important; }
+  /* Narrower, centred code blocks. NOTE: marp auto-scales code to the
+     container, so a much smaller max-width shrinks the type — 980px is
+     about the floor before it gets hard to read from the back. Do NOT
+     use width:fit-content here (collapses the type to ~5px). */
+  section pre {
+    max-width: 980px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
   .pullquote       { font-size: 36px !important; line-height: 1.25; font-style: italic; }
+  /* Bullet-only slides: cap the measure. The full slide width is ~75-90
+     characters per line at .text-medium, far too wide to read comfortably;
+     ~820px lands around 55-60. Text stays LEFT-aligned; only the box narrows. */
+  .measure { max-width: 820px !important; }
+  /* Dim already-seen items on a build slide so the new block reads as "the reveal".
+     See snippets.md § progressive reveal. */
+  .dim { color: #90a4ae !important; }
+  .dim li::marker { color: #90a4ae !important; }
+  /* Small grey chip (timings on section-opener slides) */
+  .chip { font-size: 18px !important; color: #78909c !important; }
+  /* Source credit pinned just above the footer band */
+  .srcref { position: absolute !important; left: 0; right: 0; bottom: 40px;
+            text-align: center; font-size: 16px !important; color: #5a6b75; }
   .slide-vcenter {
     display: flex !important; flex-direction: column !important;
     justify-content: center !important; height: 100% !important;
   }
   /* Positioning helpers — see references/positioning.md.
-     NOTE: these are div/img classes, NOT section _class hooks. _class emits
-     data-class in static export so `section.foo{}` never matches — see
-     marp_layout_gotchas.md. To zero padding for a full-bleed slide use
-     <style scoped>section{padding:0!important}</style>, not a class. */
+     These are div/img classes. A section `_class: foo` also works (marpit does
+     attrJoin('class', …), so `section.foo{}` DOES match in static export), but for a
+     one-slide override prefer <style scoped>section{padding:0!important}</style> —
+     it is verified not to leak to other slides. */
   /* Multi-panel figure grids: apply to the WRAPPER div, e.g. <div class="panel-grid-2"> */
   .panel-grid-2 {
     display: grid !important; grid-template-columns: repeat(2, minmax(0,1fr)) !important;
@@ -113,3 +141,4 @@ Notes:
 - Change `footer:` to the talk's venue.
 - The `h1 { font-size: 1.8em }` variant (from the Soglio workshop deck) is fine for vignette decks where titles use `#`/`###`; the version above assumes `##` titles, which is the research-talk default.
 - Don't trim classes you're not using yet — keeping the full block means any pattern from `snippets.md` works without edits.
+- For a UZH-branded talk, paste `uzh_frontmatter_corporate.yml` over the front matter instead. It is this block plus the verified UZH palette and typeface; every class above is defined in it, so the deck body needs no edits. See `uzh_house_style.md`.

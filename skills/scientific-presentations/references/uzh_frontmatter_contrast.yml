@@ -1,0 +1,172 @@
+---
+marp: true
+theme: gaia
+math: mathjax
+paginate: true
+backgroundColor: "#ffffff"
+color: "#000000"
+footer: My talk title · Venue · 2026
+style: |
+  /* ================================================================
+     VARIANT: UZH CONTRAST
+     Full-bleed UZH Blue title bar over pure-white content, black body
+     text, deep-blue pullquote slides acting as dividers. Built for a
+     bright room / a projector that washes colours out.
+     Colours verified against uzh-corporate-colors-cmyk.pdf (uzh.ch):
+       UZH Blue #0028A5 · Blue V1 #BACBFF · Blue V4 #001E7C · V5 #001452
+       Grey V3 #666666 · Grey V4 #4D4D4D
+     Typeface: UZH corporate face is Source Sans Pro (per cd.uzh.ch);
+     not installed here and no web fonts are loaded, so the stack falls
+     back to Helvetica Neue / Arial.
+     NOTE: the blue pullquote slides use :has() (Chrome 105+). On an
+     older renderer those slides simply stay white with blue text.
+     ================================================================ */
+  section {
+    background-color: #ffffff !important;
+    background-image: none !important;
+    color: #000000 !important;
+    font-family: "Source Sans Pro", "Source Sans 3", "Inter",
+                 "Roboto", "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+    letter-spacing: 0.1px !important;
+    /* Side padding MUST stay 70px: the title bar cancels it with -70px
+       margins to bleed full width. Bottom padding keeps content clear of
+       the footer / page number. */
+    padding: 70px 70px 90px 70px !important;
+    --color-background: #ffffff;
+    --color-foreground: #000000;
+    --color-highlight: #0028A5;
+    --color-dimmed: #666666;
+  }
+  section a, section mark { color: #0028A5 !important; }
+  section > footer {
+    font-size: 14px !important;
+    color: #666666 !important;
+    left: 0 !important;
+    right: 0 !important;
+    text-align: center !important;
+    padding-bottom: 18px !important;
+    letter-spacing: 0.2px !important;
+  }
+  section::after {
+    font-size: 14px !important;
+    color: #666666 !important;
+    padding-bottom: 18px !important;
+  }
+  h1 {
+    font-size: 1.5em !important;
+    color: #0028A5 !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.3px !important;
+    margin-block-start: 0.2em !important;
+    margin-block-end: 0.3em !important;
+  }
+  section h2 {
+    font-size: 1.0em !important;
+    line-height: 1.15 !important;
+    font-weight: 700 !important;
+    margin-block-start: 0 !important;
+    margin-block-end: 0.2em !important;
+  }
+  /* The device: a full-bleed UZH Blue bar across the top of every
+     content slide. Negative margins cancel the 70px section padding. */
+  section > h2 {
+    background: #0028A5 !important;
+    color: #ffffff !important;
+    margin: -70px -70px 0.45em -70px !important;
+    padding: 22px 70px 20px 70px !important;
+  }
+  section > h1:first-child { margin-top: -0.4em !important; }
+  section > h2:first-child { margin-top: -70px !important; }
+  section h3, section h4 {
+    font-size: 1.0em !important;
+    color: #001E7C !important;
+    font-weight: 700 !important;
+    margin-block-start: 0.1em !important;
+    margin-block-end: 0.3em !important;
+  }
+  section strong { color: #0028A5 !important; font-weight: 700 !important; }
+  section li::marker { color: #0028A5; }
+  /* Code: inverted inline chip, block on deep UZH blue (V5) */
+  section :not(pre) > code {
+    background: #BACBFF !important;
+    color: #001452 !important;
+    border-radius: 2px;
+  }
+  section pre { background: #001452 !important; border-radius: 3px; }
+  section pre > code { background: transparent !important; }
+  /* Pullquote slides become deep-blue dividers (needs :has(); degrades
+     gracefully to white + blue type if unsupported). */
+  section:has(.pullquote) {
+    background-color: #0028A5 !important;
+    color: #ffffff !important;
+  }
+  section:has(.pullquote) .pullquote { color: #ffffff !important; }
+  section:has(.pullquote) strong     { color: #ffffff !important; }
+  section:has(.pullquote) .text-medium,
+  section:has(.pullquote) .text-mediumsmall,
+  section:has(.pullquote) .text-small,
+  section:has(.pullquote) .text-twenty,
+  section:has(.pullquote) .text-tiny { color: #BACBFF !important; }
+  section:has(.pullquote) > footer,
+  section:has(.pullquote)::after     { color: rgba(255,255,255,0.55) !important; }
+  .two-col {
+    display: flex !important;
+    gap: 2rem !important;
+    align-items: stretch !important;
+    width: 100% !important;
+  }
+  .two-col > .col {
+    min-width: 0 !important;
+    flex: 1 1 0% !important;
+  }
+  .two-col--50 > .col         { flex: 1 1 0% !important; }
+  .two-col--30-70 > .col:first-child { flex: 3 1 0% !important; }
+  .two-col--30-70 > .col:last-child  { flex: 7 1 0% !important; }
+  .two-col--70-30 > .col:first-child { flex: 7 1 0% !important; }
+  .two-col--70-30 > .col:last-child  { flex: 3 1 0% !important; }
+  .col img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  /* Composite transparent figures onto white so nothing picks up the slide tint */
+  section img { background-color: #ffffff; }
+  img.logo { background: transparent !important; }
+  .vcenter {
+    display: flex !important; flex-direction: column !important;
+    justify-content: center !important;
+  }
+  .center { text-align: center !important; }
+  .fit { font-size: 0.8em; }
+  .text-medium      { font-size: 30px !important; line-height: 1.4; }
+  .text-mediumsmall { font-size: 27px !important; line-height: 1.3; }
+  .text-small       { font-size: 24px !important; line-height: 1.3; }
+  .text-twenty      { font-size: 20px !important; line-height: 1.3; }
+  .text-tiny        { font-size: 16px !important; line-height: 1.3; }
+  .code-small       { font-size: 14px !important; }
+  .code-small pre, .code-small code { font-size: 15px !important; line-height: 1.35 !important; }
+  .pullquote        { font-size: 36px !important; line-height: 1.25; font-style: italic;
+                      color: #0028A5 !important; }
+  .srcref { position: absolute !important; left: 0; right: 0; bottom: 40px;
+            text-align: center; font-size: 16px !important; color: #4D4D4D !important; }
+  .slide-vcenter {
+    display: flex !important; flex-direction: column !important;
+    justify-content: center !important; height: 100% !important;
+  }
+  /* Dim earlier items on build slides so the newest block reads as "the
+     reveal" — but keep it dark enough to survive a washed-out projector */
+  .dim { color: #666666 !important; }
+  .dim li::marker { color: #666666 !important; }
+  .dim strong { color: #666666 !important; }
+  /* Timing chip in the corner of section-opener slides */
+  .chip { font-size: 18px !important; color: #4D4D4D !important; }
+  .panel-grid-2 {
+    display: grid !important; grid-template-columns: repeat(2, minmax(0,1fr)) !important;
+    gap: 1.5rem !important; place-items: center !important;
+  }
+  .panel-grid-3 {
+    display: grid !important; grid-template-columns: repeat(3, minmax(0,1fr)) !important;
+    gap: 1rem !important; place-items: center !important;
+  }
+  .panel-grid-2 img, .panel-grid-3 img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  img[alt~="top-right"]     { position: absolute !important; top: 30px; right: 30px; margin: 0; }
+  img[alt~="top-left"]      { position: absolute !important; top: 30px; left: 30px; margin: 0; }
+  img[alt~="bottom-right"]  { position: absolute !important; bottom: 30px; right: 30px; margin: 0; }
+  img[alt~="bottom-left"]   { position: absolute !important; bottom: 30px; left: 30px; margin: 0; }
+---
