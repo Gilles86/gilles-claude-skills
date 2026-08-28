@@ -149,10 +149,12 @@ identified, that tail lets the group SD inflate to accommodate it, the subject
 estimates follow it out, and the result is a funnel: divergences, deep trees,
 and per-subject values past anything the likelihood can actually resolve.
 
-It bites hardest on exactly the models worth fitting. A one-parameter model
-constrains its own SD; a multi-stage model where two parameters compete to
-explain the same variance does not, and the Cauchy tail turns weak
-identifiability into a runaway. Measured on a two-stage efficient-coding model:
+It bites hardest on exactly the models worth fitting. A simple model constrains
+its own SD; a complex one — enough moving parts that several parameters can
+trade off against each other to explain the same variance — does not, and the
+Cauchy tail turns that weak identifiability into a runaway. The richer and more
+interesting the model, the more this matters. Measured on an efficient-coding
+model with a perceptual and a valuation noise source:
 `kappa_r` reached 250-556 per subject against a grid that can only resolve 258,
 and the correlation between log(group SD) and the subject offsets stayed at
 0.57-0.74 *despite* non-centred parameterisation — i.e. the reparameterisation

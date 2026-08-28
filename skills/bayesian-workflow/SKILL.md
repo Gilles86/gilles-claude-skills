@@ -143,8 +143,8 @@ observed points, direct labels, caption language — belongs to the
   to habit.
 - **Group-level SDs get a `HalfNormal`, not a `HalfCauchy`.** The Cauchy tail
   lets an unidentified subject-level parameter run away and drag the group SD
-  with it, and it does so worst on multi-stage models where two parameters
-  compete for the same variance. See
+  with it, and it does so worst on the complex models — the interesting ones,
+  with enough structure that parameters can trade off against each other. See
   [references/sampler_traps.md](references/sampler_traps.md) for the evidence
   and for the caveat that this regularises rather than identifies.
 - Prior predictive check before fitting: simulate from the prior and look at
