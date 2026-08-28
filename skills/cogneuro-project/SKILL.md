@@ -270,6 +270,73 @@ pip-installed packages from git URLs in the env YML.
 Don't vendor copies. Don't rely on `libs/braincoder` being on
 `sys.path` (only works from repo root).
 
+### One conda env per project, and per accelerator — never shared
+
+A project owns its environments. Create them from the project's own YMLs and
+install that project's own `libs/` checkouts into them:
+
+| Env name | Built from | For |
+|---|---|---|
+| `<project>` | `environment_apple_silicon.yml` | local Mac dev |
+| `<project>_cpu` | `create_env/environment_cpu.yml` | cluster CPU jobs |
+| `<project>_cuda` | `create_env/environment_cuda.yml` | cluster GPU jobs (build ON a GPU node) |
+| `<project>_behavior` | `environment_cloud_behavior.yml` | behaviour-only box; no TF/CUDA, solves in seconds |
+
+```bash
+conda env create -f environment_cuda.yml          # name: <project>_cuda
+conda activate <project>_cuda
+pip install -e .                                  # the project package
+pip install -e libs/bauer libs/braincoder         # THIS project's checkouts
+```
+
+Then verify the env points where you think it does — one line, run it every
+time you build an env:
+
+```bash
+python -c "import bauer, braincoder, pathlib; \
+  print(bauer.__file__); print(braincoder.__file__)"
+# both paths MUST be inside this project's libs/. If they name another
+# project's repo, the env is borrowing someone else's library.
+```
+
+**Why this is a rule and not a preference.** `pip install -e` writes an
+absolute path into site-packages, so an env built by pointing at a *different*
+project's `libs/` is permanently coupled to it. Audit an existing machine with:
+
+```bash
+for e in $CONDA_ROOT/envs/*/; do
+    p=$($e/bin/python -c "import bauer; print(bauer.__file__)" 2>/dev/null)
+    [ -n "$p" ] && echo "$(basename $e) -> $p"
+done
+```
+
+On sciencecluster in 2026-08 that returned **fourteen envs across five
+projects** — `retsupp_*`, `soglio_cuda`, `value_capture`, `tf2-*` and the
+`tms_risk_*` family — all resolving to `~/git/tms_risk/libs/bauer`. A
+`git checkout` in that one directory silently repoints the library for every
+one of them, including jobs already running, and nothing raises.
+
+**Pinning a version, wherever you are.** Even with dedicated envs, don't pin by
+checking out inside `libs/` — that mutates the tree your editable install
+tracks. Clone and use PYTHONPATH, which precedes site-packages and so wins
+without touching anything:
+
+```bash
+git clone <repo>/libs/bauer /scratch/$USER/bauer_<tag>
+git -C /scratch/$USER/bauer_<tag> checkout <commit>
+PYTHONPATH=/scratch/$USER/bauer_<tag> python -m <project>.behavior.fit_model ...
+```
+
+**Stamp the library commit into every artifact you fit** (bauer traces do this
+in `trace.posterior.attrs`). A stored fit only means something against the
+commit that produced it, and a mismatched reload predicts plausible-looking
+wrong numbers rather than raising.
+
+If you inherit a shared checkout you cannot untangle yet, guard it: a
+`post-checkout` hook in `.git/modules/libs/<lib>/hooks/` printing the
+dependent-env list, plus an *untracked* `SHARED_CHECKOUT_README.md` at the
+library root — untracked so a checkout cannot remove it.
+
 The three libraries:
 
 - **braincoder** — PRF / encoding-model fitting (Keras 3

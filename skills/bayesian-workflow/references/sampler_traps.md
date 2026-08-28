@@ -39,6 +39,38 @@ polite. A job killed at 95% produces nothing at all; SLURM partitions with
 `MaxTime=UNLIMITED` make a 3-day request free. Check with
 `scontrol show partition | grep MaxTime` before assuming 24 h is the cap.
 
+### Your fit is probably running in float32, whatever pytensor says
+
+`pytensor.config.floatX` is `float64` by default, but the JAX path only honours
+that if `jax_enable_x64` is on -- and it is **off** by default in JAX. Neither
+PyMC nor pytensor turns it on, and pytensor's JAX backend downcasts silently
+(no dtype warning in the log). So a fit that looks like float64 in every config
+readout is being sampled in float32.
+
+Check it, don't assume: `python -c "import pytensor, jax, pymc;
+print(pytensor.config.floatX, jax.config.jax_enable_x64)"`.
+
+Usually this is fine, and worth verifying rather than fearing. On a grid
+likelihood dominated by normalised probability arrays (no catastrophic
+cancellation), measured against float64 on the same model:
+
+    logp     relative difference   8.8e-09
+    gradient relative L2 error     7.3e-08   (worst component 1.1e-07)
+
+That is ~1 ulp of float32, and far below the O(step^2) discretisation error of
+the leapfrog integrator, so NUTS cannot tell the difference. The corresponding
+fit sampled with zero divergences.
+
+It matters for two decisions, though:
+
+- **Benchmarks.** A CPU-vs-GPU comparison is only apples-to-apples if both
+  sides are in the same precision. Check before quoting a speedup.
+- **Hardware choice.** If anything ever turns x64 on, consumer and
+  inference-class GPUs fall off a cliff: a Tesla T4 measured 2.53 TFLOP/s fp32
+  against 0.12 fp64, a 21x penalty. Datacentre cards (A100/H100) are ~2x. A
+  model that "suddenly got slow on the GPU" after a library upgrade is worth
+  checking here first.
+
 ## PyMC
 
 ### `pm.Potential` likelihoods break `log_likelihood`
