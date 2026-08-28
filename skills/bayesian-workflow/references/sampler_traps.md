@@ -140,6 +140,37 @@ sampler backend. Thirty seconds locally, versus a day of queue plus a crash.
   first `n_subjects` *trials* — all of which belong to subject 0. Every subject
   then shares subject 0's parameters and the group SD gets exactly zero
   gradient. Single-subject fits are unaffected, so this hides in testing.
-- A `HalfCauchy` group SD has tails long enough to let an unidentified
-  subject-level parameter run away to the edge of the grid. If a subject's
-  estimate is implausible, check identifiability before blaming the subject.
+### House rule: group SDs get a HalfNormal, not a HalfCauchy
+
+**Default to `HalfNormal` on every group-level SD.** `HalfCauchy` — the
+textbook weakly-informative choice, and bauer's own default before 0.3.0 — has
+an infinite-variance tail. When a subject-level parameter is only weakly
+identified, that tail lets the group SD inflate to accommodate it, the subject
+estimates follow it out, and the result is a funnel: divergences, deep trees,
+and per-subject values past anything the likelihood can actually resolve.
+
+It bites hardest on exactly the models worth fitting. A one-parameter model
+constrains its own SD; a multi-stage model where two parameters compete to
+explain the same variance does not, and the Cauchy tail turns weak
+identifiability into a runaway. Measured on a two-stage efficient-coding model:
+`kappa_r` reached 250-556 per subject against a grid that can only resolve 258,
+and the correlation between log(group SD) and the subject offsets stayed at
+0.57-0.74 *despite* non-centred parameterisation — i.e. the reparameterisation
+that is supposed to break the funnel could not.
+
+In bauer: `_group_sd_rv(name, scale, dist='halfnormal')` is the 0.3.0 default,
+and the per-model `group_sd_dist` attribute switches it. Anything on a branch
+behind 0.3.0 is still `HalfCauchy(beta=0.25)` — check before assuming.
+
+**The honest caveat.** HalfNormal *regularises*; it does not *identify*. A
+parameter the data cannot constrain will now produce a tidy, tight,
+prior-driven posterior instead of a visible runaway — better behaviour and
+better camouflage. So do not read the tightening as information: refit both
+ways once and compare the subject-level estimates. If they barely move it is
+free regularisation; if they move a lot, the prior is doing the work and that
+belongs in the write-up. And the scale matters more than the family —
+`HalfNormal(0.25)` is far tighter than `HalfCauchy(0.25)`, so check the implied
+between-subject spread against what the design could plausibly produce.
+
+- If a subject's estimate is implausible, check identifiability before blaming
+  the subject — and before blaming the prior.
