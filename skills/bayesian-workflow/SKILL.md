@@ -118,6 +118,17 @@ the mean-parameter trap, and the bauer / PyMC APIs that do and do not give you
 simulated outcomes — are in
 [references/ppc_construction.md](references/ppc_construction.md).
 
+**This applies to maximum-likelihood and bootstrap fits too.** The rule is not
+about Bayes; it is about which uncertainty answers the question. A fitted line
+with s.e.m. bars on the data answers "how precisely did we measure each point".
+A model figure has to answer "could this model have produced these data", and
+that needs the model's PREDICTIVE uncertainty — parameter uncertainty plus the
+sampling noise of the outcome at the trial counts actually run — drawn as a
+band with the observed points on top. For an ML fit, bootstrap the unit of
+exchangeability (usually participants), refit, then add the outcome's sampling
+noise at each cell's own n. Band and points then live on the same footing, and
+a point outside the band is a real misfit rather than a small error bar.
+
 How to *draw* the resulting panel — visual hierarchy, no error bars on the
 observed points, direct labels, caption language — belongs to the
 **scientific-figures** skill
