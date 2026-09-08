@@ -274,9 +274,68 @@ smoothed data — check coverage before trusting a printed `n=`:
 find <model-dir> -name "*_smoothed_pe.nii.gz" | wc -l
 ```
 
+## Prefer a static bundle over the live server
+
+`cortex.webgl.make_static(outdir, ds, ...)` writes plain HTML/JS/binary that
+any file server can host (`python -m http.server`). Nothing depends on a live
+Python process, so the daemon-thread death in rule 1 stops mattering; the
+output can be rsynced to a collaborator and reopened later without rebuilding
+the datasets. This is the better default for anything you want to look at more
+than once.
+
+Four traps, all of which cost real debugging time:
+
+- **`types` is for MORPH TARGETS only — never put `"flat"` in it.** Pycortex
+  loads the flat surface itself and stores it as UV coordinates (that is what
+  drives the viewer's flatten slider). `addSurf("flat")` instead renormalises
+  it into the fiducial bounding box, and the flat surface's z axis is
+  constant, so the per-axis `(max - min)` divide yields inf/NaN and OpenCTM
+  rejects the mesh with a bare `CTM_INVALID_MESH`. Pass
+  `types=("inflated",)`; flat comes along by itself when the subject has it.
+- **`make_static` never deletes files it did not write this run.** Rebuilding
+  with a different dataset list leaves the old payloads behind — unreferenced
+  by `index.html`, so invisible, but accumulating. One bundle reached 235 MB
+  across three builds against 85 MB clean. Clear `<outdir>/data/` first.
+- **The generated page closes neither `</body>` nor `</html>`**, so anything
+  you append lands after the last tag and the browser reparents it. Works, but
+  do not search for a closing tag to insert before.
+- **`quickflat.make_figure` shells out to Inkscape** for the ROI/sulci overlay.
+  On a machine without it, pass `with_rois=False, with_sulci=False,
+  with_labels=False` — a freshly imported subject has no drawn ROIs anyway.
+
+`curvature_brightness=0.62, curvature_contrast=0.28, curvature_smoothness=2.0`
+flattens the default near-binary black/white curvature into a background that
+orients you without competing with the data.
+
+## Getting a real colorbar next to a blend_curvature map
+
+Two options, and the obvious one is the worse one.
+
+`Vertex2D` against a 2D `*_alpha` colormap keeps `vmin`/`vmax`/`cmap` live, so
+pycortex draws its own colorbar and the sliders work. But it moves the
+data-over-curvature blend into the shader, and the result reads noticeably
+washed out next to Python-side compositing. Pycortex also ships only ~15
+`*_alpha` maps, so anything else has to be generated (256x256 RGBA, colormap
+across dim1, alpha down dim2). And because a `BrainData`'s `name` is a
+read-only hash of its array, datasets sharing one alpha mask — which parameter
+maps legitimately do — collide in `Package.reorder` and die with
+`TypeError: byte indices must be integers or slices, not tuple`.
+
+**Better: keep `blend_curvature` and draw the legend yourself** from the
+ranges you already hold, as CSS gradients injected into the page. No
+dependency on what pycortex can introspect from a pre-blended image, and it
+works for any rendering. Track the active dataset by wrapping
+`mriview.Viewer.prototype.setData` (the single funnel every switch goes
+through) — with a probe of the implicit global `figure` for the dataset
+pycortex selects during load, before the wrapper can be installed.
+
 ## Copy-pasteable
 
 - [`references/persistent_webshow.py`](./references/persistent_webshow.py)
   — a launch pattern that survives both the daemon-thread-exit and
   hostname-URL gotchas above, safe to run under a background task runner.
   Swap in your own dataset-building code where marked.
+- [`references/static_bundle_with_legend.py`](./references/static_bundle_with_legend.py)
+  — `make_static` bundle plus the injected, dataset-tracking colorbar panel,
+  a multi-subject landing page, and a server. Carries the four traps above in
+  its docstring.
