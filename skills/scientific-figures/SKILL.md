@@ -52,10 +52,91 @@ The things that most reliably separate a real scientific figure from a generic s
 2. **Ticks point outward, short, thin.** Never inward, never long. `xtick.direction: 'out'`, `ytick.direction: 'out'`, `xtick.major.size: 3`, `xtick.major.width: 0.8`.
 3. **Helvetica throughout, sized to the 5–8 pt journal ceiling — ~7 pt tick labels, ~8 pt axis labels, ~7–8 pt annotations.** Verified against the target journals directly: Nature Communications' submission guide states the "optimum font size is between 5pt and 8pt" at final print size; Neuron/Cell Press is consistently reported at the same range (cell.com blocks automated verification, but the number recurs independently). Err toward the larger end (7–8, not 5) within that ceiling — 9–10pt, this section's old recommendation, is out of spec and gets flagged or rescaled at production. Helvetica specifically, not "a sans-serif" or Arial; install it or use a metric-compatible alternative (Helvetica Neue, TeX Gyre Heros) if unavailable, Arial only as a last resort with the substitution flagged. No serifs.
 4. **Direct-label conditions; avoid legends.** A legend is a key the reader must consult — it pulls the eye off the data and reintroduces caption-dependence. Place condition labels directly on the data, at the line's right endpoint or next to the relevant cluster, in the data's color. Use `ax.text` or `ax.annotate`. If a legend is unavoidable (too many conditions to direct-label), use `frameon=False` and keep it off the data.
-5. **Figure size in physical units, set first, never changed by export.** Points only mean something relative to the *rendered* size: a 10 pt label looks right at 3.5" wide, small at an auto-sized 6.4", tiny on a 12" poster panel. Pick the physical size first — single column ≈ 3.5" (88 mm), 1.5-column ≈ 5" (127 mm), double column ≈ 7.25" (180 mm), poster panels 8–16" — then proportion everything to it via `figsize=(w, h)`. Never resize the PDF afterwards (`\includegraphics[width=...]`); regenerate at the new width instead.
-6. **Vector output, fonts as text.** Save PDF or SVG with `rcParams['pdf.fonttype'] = 42` and `rcParams['ps.fonttype'] = 42` so fonts stay editable in Illustrator rather than converted to paths.
-7. **No overlapping ink — verify it.** Text, annotations, legends, and `n=`/stat labels must NEVER overlap data points, error bars, curves, or each other. This is the single most common avoidable flaw. Place labels in genuinely empty regions (for a *rising* psychometric the top-left and bottom-right are empty; for a decaying/inverted-U curve the reverse), add headroom with `ylim`, or move the text into the **title, margin, or axis label** instead of floating it in the panel (e.g. put "16 sessions" in the y-label "Monkey K · 16 sessions", not as an in-panel annotation). After rendering, actually look at the figure and confirm nothing collides — every panel, every time.
-8. **Aspect ratio matches the data's shape — stimulus-axis curves are WIDE, never tall.** A psychometric (P vs stimulus) or chronometric (RT vs stimulus) curve is a gentle sigmoid/inverted-U running along x; give each such panel width:height ≥ ~1.4:1 (often 2:1). Tall-narrow panels distort the curve, exaggerate noise, and waste vertical space. (Heatmaps, population stacks, and forest plots may be tall; anything-vs-stimulus should not be.)
+5. **Draw the glyph. Never name it in prose.** This applies to EVERY mark a
+   panel uses — lines, dashes, bands, bars, whiskers, filled vs open markers,
+   pale background strips, significance rules. A corner note reading
+   "Solid: risky second, dashed: risky first", "Pale: payoffs shown",
+   "Bar: prior μ ± σ", "Whiskers: 95% CrI", "Dots: observed, band: 95%
+   predictive" or "Bar: 95% CrI excludes 0" is the failure mode: it makes the
+   reader hold a word→ink mapping in their head while looking somewhere else,
+   and the word is always a worse description of the mark than the mark is.
+
+   Instead draw a **miniature of the actual mark** — same color, same style,
+   same alpha, same cap — next to its label, inside the panel near the ink it
+   explains. It reads once and is done. A 4–6 pt glyph plus a 6.5 pt label is
+   enough. Only quantities with no visual form (what a p-value means, an n, a
+   test name) may stay as words.
+
+   ```python
+   def key(ax, entries, x=.04, y=.96, dy=.085, seg=.075, fs=6.5):
+       """Inline legend drawn as real glyphs.
+
+       entries: (label, color, kind, opts) where kind is
+         'line'    — stroke in `ls`, the plain condition key
+         'band'    — filled patch at the band's own alpha
+         'bar'     — thick stroke, for mu +/- sigma or CrI rules
+         'whisker' — capped rule, for interval whiskers
+         'marker'  — a single marker in its own facecolor/edge
+       """
+       for i, (lab, col, kind, o) in enumerate(entries):
+           yy = y - i * dy
+           tf = ax.transAxes
+           if kind == 'band':
+               ax.add_patch(plt.Rectangle((x, yy - .022), seg, .044,
+                            transform=tf, facecolor=col,
+                            alpha=o.get('alpha', .2), lw=0, clip_on=False))
+           elif kind == 'whisker':
+               ax.plot([x, x + seg], [yy, yy], transform=tf, color=col,
+                       lw=o.get('lw', 1.1), clip_on=False)
+               for xe in (x, x + seg):
+                   ax.plot([xe, xe], [yy - .022, yy + .022], transform=tf,
+                           color=col, lw=o.get('lw', 1.1), clip_on=False)
+           elif kind == 'marker':
+               ax.plot(x + seg / 2, yy, o.get('marker', 'o'), transform=tf,
+                       ms=o.get('ms', 3.6), color=col, clip_on=False,
+                       mfc=o.get('mfc', col), mew=o.get('mew', 0))
+           else:                                   # 'line' and 'bar'
+               ax.plot([x, x + seg], [yy, yy], transform=tf, color=col,
+                       ls=o.get('ls', '-'),
+                       lw=o.get('lw', 2.6 if kind == 'bar' else 1.4),
+                       alpha=o.get('alpha', 1), solid_capstyle='butt',
+                       clip_on=False)
+           ax.text(x + seg + .028, yy, lab, transform=tf,
+                   color=o.get('tc', col), fontsize=fs, va='center')
+   ```
+
+   This is the same principle as direct labeling (rule 4): the key belongs next
+   to the ink it explains. Reserve `ax.legend()` for when there are too many
+   conditions to place by hand, and even then `frameon=False` and off the data.
+
+6. **An in-panel key names an ENCODING, never a statistic.** Rule 5 says draw
+   the glyph for anything that distinguishes conditions: which colour is which
+   group, which line is which model, which marker is observed versus predicted.
+   It does NOT license putting *what an interval represents* in the panel.
+   "Bars are 95% CrI", "Shaded: ±1 SEM", "Whiskers: 95% credible interval",
+   "n = 35", "Wilcoxon signed-rank" are **bookkeeping**, and bookkeeping lives
+   in the caption — that is the one job the caption has. A panel that spends
+   ink telling the reader what an error bar means has traded data area for
+   something every reader of the caption already knows.
+
+   The test: *would two panels using different intervals be confusable?* If a
+   figure mixes a 95% CrI in one panel and a 95% predictive interval in
+   another, the distinction is an encoding and may need marking; if every
+   interval in the figure is the same kind, say it once in the caption and
+   never in the panel.
+
+   **The exception: a mark whose MEANING is the statistic.** A significance
+   rule, a shaded "credible" span, an asterisk — the reader cannot decode the
+   mark at all without knowing which interval it refers to, so the interval
+   belongs in its key. "95% CrI excludes 0" is right; "Excludes 0" is not,
+   because it leaves open *what* excludes zero. The distinction is whether the
+   interval identifies the mark (keep it) or merely describes error bars the
+   reader can already see (caption).
+
+7. **Figure size in physical units, set first, never changed by export.** Points only mean something relative to the *rendered* size: a 10 pt label looks right at 3.5" wide, small at an auto-sized 6.4", tiny on a 12" poster panel. Pick the physical size first — single column ≈ 3.5" (88 mm), 1.5-column ≈ 5" (127 mm), double column ≈ 7.25" (180 mm), poster panels 8–16" — then proportion everything to it via `figsize=(w, h)`. Never resize the PDF afterwards (`\includegraphics[width=...]`); regenerate at the new width instead.
+8. **Vector output, fonts as text.** Save PDF or SVG with `rcParams['pdf.fonttype'] = 42` and `rcParams['ps.fonttype'] = 42` so fonts stay editable in Illustrator rather than converted to paths.
+9. **No overlapping ink — verify it.** Text, annotations, legends, and `n=`/stat labels must NEVER overlap data points, error bars, curves, or each other. This is the single most common avoidable flaw. Place labels in genuinely empty regions (for a *rising* psychometric the top-left and bottom-right are empty; for a decaying/inverted-U curve the reverse), add headroom with `ylim`, or move the text into the **title, margin, or axis label** instead of floating it in the panel (e.g. put "16 sessions" in the y-label "Monkey K · 16 sessions", not as an in-panel annotation). After rendering, actually look at the figure and confirm nothing collides — every panel, every time.
+10. **Aspect ratio matches the data's shape — stimulus-axis curves are WIDE, never tall.** A psychometric (P vs stimulus) or chronometric (RT vs stimulus) curve is a gentle sigmoid/inverted-U running along x; give each such panel width:height ≥ ~1.4:1 (often 2:1). Tall-narrow panels distort the curve, exaggerate noise, and waste vertical space. (Heatmaps, population stacks, and forest plots may be tall; anything-vs-stimulus should not be.)
 
 A figure with these and nothing else will still look broadly correct. The rest of the document gets from "broadly correct" to "actually good".
 
