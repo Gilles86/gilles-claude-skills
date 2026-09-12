@@ -1,51 +1,42 @@
 ---
 name: pycortex
-description: Gotchas and best practices for pycortex (cortical-surface visualization / webgl viewer) — why `cortex.webgl.show()` often "doesn't load" (the server's daemon thread dies the instant your script exits; the auto-opened URL uses the machine hostname instead of localhost), the pycortex2-vs-heavy-env split, `VertexRGB`/`blend_curvature` vs `Vertex2D` for alpha/threshold display (baked-in vs live), and why R²-shaped auto-threshold code silently breaks on cvR²-like data that can be negative. Use whenever calling `cortex.webgl.show`, `cortex.Vertex`/`VertexRGB`/`Vertex2D`, `blend_curvature`, or debugging a pycortex viewer that won't load, shows a blank page, or crashes with a cryptic `TypeError`.
+description: Gotchas and best practices for pycortex (cortical-surface visualization / webgl viewer) — why `cortex.webgl.show()` often "doesn't load", the pycortex2-vs-heavy-env split, `VertexRGB`/`blend_curvature` vs `Vertex2D` for alpha/threshold display (baked-in vs live), why R²-shaped auto-threshold code silently breaks on cvR²-like data, `make_static` bundle traps, and driving a bundle from JavaScript (camera, `mix`, `setData`). References cover auto-flattening a cohort with autoflatten and writing real ROIs into `overlays.svg` from a vertex mask. Read it BEFORE any pycortex work — almost every failure here is silent or reported far from its cause. Use whenever calling `cortex.webgl.show`/`make_static`, `cortex.Vertex`/`VertexRGB`/`Vertex2D`, `blend_curvature`, `cortex.db.get_overlay`/`get_roi_verts`, `import_flat`/autoflatten, or writing ROIs into `overlays.svg`; and when debugging a pycortex viewer that won't load, shows a blank page or a stale overlay, hangs on an `overwrite overlays.svg?` prompt, or crashes with a cryptic `TypeError` or `BrokenProcessPool`.
 ---
 
 # pycortex — gotchas and best practices
 
-Distilled from repeated pycortex sessions on abstract_values (group cvR²/R²
-flatmaps and interactive webshows). Pycortex is powerful but rough around
-the edges — most failures are silent, or produce errors far from the real
-root cause. This skill exists to shortcut that debugging loop.
+Pycortex is powerful and rough around the edges. Almost nothing here fails loudly:
+a NaN threshold surfaces as a `TypeError` about byte indices, a missing FreeSurfer
+license as a topology error, an unknown XLA flag as `BrokenProcessPool`, a stale
+browser cache as "my rebuild did nothing". **Read this file before starting**, and
+open the reference for the part you are about to touch — each carries the full recipe
+and its traps:
+
+| About to | Read first |
+|---|---|
+| flatten subjects that were never cut in Freeview | [`references/autoflatten.md`](./references/autoflatten.md) |
+| write ROIs into `overlays.svg` from a vertex mask | [`references/roi_authoring.md`](./references/roi_authoring.md) |
+| build a bundle with its own legend / landing page | [`references/static_bundle_with_legend.py`](./references/static_bundle_with_legend.py) |
+| keep a live `webgl.show` alive from a script | [`references/persistent_webshow.py`](./references/persistent_webshow.py) |
+
+Distilled from repeated sessions on abstract_values and tms_risk (group cvR²/R²
+flatmaps, per-participant webgl bundles).
 
 ## Golden rules
 
-**0. An AI assistant driving these sessions cannot see `cortex.webgl.show()` —
-render a static PNG and actually look at it before reporting anything.**
+**0. An AI assistant cannot see `cortex.webgl.show()` — render a static PNG and
+actually look at it before reporting anything.** A script can run cleanly, print
+plausible statistics, and still have produced a dataset that renders as a blank
+curvature-only image — e.g. nothing survived a threshold, so `alpha` is 0 everywhere.
+The printed numbers will not catch it. Render the same data with
+`cortex.quickflat.make_figure(vtx, with_curvature=True)` → `savefig` and view the file.
+This caught a genuinely broken figure whose log looked completely normal.
 
-`cortex.webgl.show()` opens an interactive WebGL session in the *user's*
-browser; nothing about it is inspectable from the process that launched
-it. It is entirely possible for a script to run cleanly, print plausible
-summary statistics (an `n=`, a threshold, a percentage), and still have
-produced a dataset that renders as a **blank curvature-only image** —
-e.g. because nothing survived a significance threshold, so `alpha` is 0
-everywhere. The printed numbers alone will not catch this. Render the
-same data with `cortex.quickflat.make_figure(vtx, with_curvature=True) →
-fig.savefig(...)` (or this project's own `--static-png` flag where
-available) and actually view the resulting file before describing the
-result to anyone. This caught a genuinely broken figure in the
-abstract_values session that spawned this skill — the printed log looked
-completely normal.
-
-**1. A `cortex.webgl.show()` server dies the instant your script returns —
-it does not run as an independent process.**
-
-`WebApp` (`cortex/webgl/serve.py`) is a `daemon=True` `threading.Thread`.
-When you call `cortex.webgl.show(ds)` from a plain script (`python -m
-foo.py`, or any launcher with no code after the call) and the interpreter
-exits, the daemon thread is killed with it — often within seconds, and
-sometimes before the browser has even finished pulling all the CTM/surface
-assets, which makes the page look permanently "stuck loading" even though
-the server *did* briefly work. This is why running interactively (IPython,
-a Jupyter cell, `python -i`) "just works": the REPL process never exits on
-its own, so the thread survives for as long as you keep the session open.
-
-For a script or background-task launch, you must keep the main thread
-alive yourself after starting the server. See
-[`references/persistent_webshow.py`](./references/persistent_webshow.py)
-for the full pattern; the essential shape:
+**1. A `cortex.webgl.show()` server dies the instant your script returns.** `WebApp`
+(`cortex/webgl/serve.py`) is a `daemon=True` thread, so it is killed with the
+interpreter — often before the browser finished pulling the CTM, which makes the page
+look permanently "stuck loading". Interactive sessions (IPython, `python -i`) work only
+because the REPL never exits. From a script, keep the main thread alive yourself:
 
 ```python
 server = cortex.webgl.show(ds, open_browser=False, autoclose=False)
@@ -55,287 +46,176 @@ while True:
     time.sleep(3600)            # keep the daemon thread alive
 ```
 
-**2. The auto-opened browser URL uses your hostname, not `localhost` — and
-that usually fails to load.**
+**2. The auto-opened browser URL uses your hostname, not `localhost`.**
+`show(..., open_browser=True)` builds `http://<hostname><domain>:<port>/mixer.html`,
+which on most laptops does not resolve — the tab shows "can't reach this page" while the
+server is fine. Pass `open_browser=False` and open a `localhost` URL yourself. Rules 1
+and 2 independently make a working viewer look broken.
 
-`cortex.webgl.show(..., open_browser=True)` (the default) builds the URL
-as `http://<hostname><domain>:<port>/mixer.html` (from `serve.hostname`),
-not `http://localhost:<port>`. On most laptops that hostname doesn't
-resolve/connect from the browser, so the auto-opened tab shows a
-"can't reach this page" error even when the server itself is fine. Fix:
-manually replace the hostname with `localhost` in the address bar — or
-better, don't rely on the auto-open at all: pass `open_browser=False`,
-build the URL yourself with `localhost`, and open it explicitly
-(`subprocess.run(["open", url])` on macOS). Combine with rule 1's
-keep-alive pattern; both bugs independently make the viewer look "broken"
-even though the underlying computation was fine.
+**3. Two conda environments — don't mix them.** `pycortex2` (pycortex + numpy/nibabel/
+scipy, deliberately minimal) for anything touching `cortex.*`; the project's heavy env
+(nilearn/nipype/TF) for anything that *produces* the surface data. Installing nilearn/TF
+into `pycortex2` invites conflicts with pycortex's numpy/scipy pins; keep
+surface-sampling scripts import-light instead.
 
-**3. Two conda environments — don't mix them.**
-
-`pycortex2` (pycortex + numpy/nibabel/scipy only, kept deliberately
-minimal) for anything that touches `cortex.*` — viewing, `blend_curvature`,
-`cortex.webgl.show`. The project's heavy analysis env (nilearn/nipype/TF)
-for anything that *produces* the surface data in the first place
-(`nilearn.surface.vol_to_surf`, FreeSurfer `SurfaceTransform` via nipype).
-Installing nilearn/TF into `pycortex2` just to avoid the split invites
-dependency conflicts with pycortex's own numpy/scipy pins; keep
-surface-sampling scripts import-light instead so more of them can run in
-`pycortex2` too.
-
-**4. A freshly-`freesurfer.import_subj()`-ed pycortex subject has NO flat
-map — `cortex.quickflat.make_figure()` (and any `Vertex.blend_curvature()`
-static PNG) will hard-crash with `OSError` / `KeyError: 'flat'`.**
-
-Flat maps are not derived automatically from the FreeSurfer surfaces —
-they require a set of manual topological cuts (drawn in Freeview) that
-`mris_flatten` then relaxes into 2D. `import_subj()` only imports the
-fiducial/inflated/white/pial surfaces; nothing about it produces a
-`flat_{hemi}.gii`. Symptom, traced end-to-end on abstract_values sub-25/26
-(freshly ingested, never manually cut):
-
-```
-File ".../cortex/quickflat/utils.py", line 360, in _make_flatmask
-    pts, polys = db.get_surf(subject, "flat", merge=True, nudge=True)
-File ".../cortex/database.py", line 526, in get_surf
-    fnm = str(os.path.splitext(files[type][hemi])[0])
-KeyError: 'flat'
-```
-
-If the subject has never been manually cut, **don't try to route around
-this with a curvature-only quickflat render as a silent substitute** — it
-quietly produces a *different, weaker* deliverable (no flat unfolding) than
-what was asked for. Two real options:
-
-- **No flat map available yet**: fall back to inflated-surface static
-  renders instead (`nilearn.plotting.plot_surf_stat_map` straight off the
-  FreeSurfer `{hemi}.inflated` + `{hemi}.curv` files — no pycortex flat
-  cut needed, works headlessly). Say explicitly that this is inflated, not
-  flattened, and why.
-- **Generate the flat map automatically** — see below.
-
-### Auto-generating flat maps with `autoflatten` (no manual Freeview cutting)
-
-[`gallantlab/autoflatten`](https://github.com/gallantlab/autoflatten) (`pip install
-autoflatten`, **own conda env** — pulls its own jax/jaxlib, don't mix with a project's
-TF/JAX env) maps a template cut set (derived from pycortex's own fsaverage cuts) onto a
-subject via `mri_label2label`, then flattens with a JAX solver (`pyflatten`, the default
-backend — no FreeSurfer `mris_flatten` needed, only the cut *projection* does). One
-command per subject, budget real time for it (~11–12 min/hemisphere on ~150k vertices;
-`--parallel` runs both concurrently for roughly single-hemisphere wall time) — submit via
-`sbatch`/`srun`, not the login node:
-
-```bash
-autoflatten $SUBJECTS_DIR/sub-25_ses-1 --parallel --overwrite
-```
-
-Its output filename (`{hemi}.autoflatten.flat.patch.3d`) matches pycortex's naming
-convention — but **`import_flat`'s own `patch` arg already appends `.flat` internally**
-(`get_surf(..., patch+".flat")`), so pass `patch="autoflatten"`, NOT `"autoflatten.flat"`
-— the doubled form silently looks for a nonexistent `....flat.flat.patch.3d` and raises
-`FileNotFoundError`. Import directly (in the `pycortex2` env; rule 3 still applies):
-
-```python
-from cortex import freesurfer
-freesurfer.import_flat(fs_subject, patch="autoflatten", hemis=["lh", "rh"],
-    cx_subject=cx_subject, freesurfer_subject_dir=fs_subjects_dir,
-    auto_overwrite=True)   # or it blocks on an input() prompt
-```
-Confirmed working end-to-end on abstract_values sub-25 (saves to
-`<filestore>/<cx_subject>/surfaces/flat_{hemi}.gii`).
-
-**Only two FreeSurfer binaries needed — `mri_info` and `mri_label2label`** (`mris_flatten`
-is only for the alternate `--backend freesurfer`). On sciencecluster there's no bare-metal
-FreeSurfer, but fmriprep's apptainer image is an *extracted sandbox dir*, not a `.sif`, so
-its bundled binaries run directly, no `apptainer exec` needed:
-
-```bash
-export FREESURFER_HOME=/shares/zne.uzh/containers/fmriprep-25.2.3/opt/freesurfer
-export PATH=$FREESURFER_HOME/bin:$PATH
-export FS_LICENSE=$HOME/freesurfer/license.txt   # required — see gotcha below
-export SUBJECTS_DIR=/shares/zne.uzh/gdehol/ds-abstractvalue/derivatives/fmriprep/sourcedata/freesurfer  # must contain fsaverage (template cut source)
-```
-
-**Missing `FS_LICENSE` fails silently, several steps away from the real error.**
-`mri_info --version` needs no license and reports fine — false confidence that FreeSurfer
-"works." But `mri_label2label` (the actual projection) does need one; the container's
-FreeSurfer has no `opt/freesurfer/.license` (fmriprep normally supplies this via
-`APPTAINERENV_FS_LICENSE` *through* apptainer, which doesn't apply when calling the
-extracted binary directly). Without it, every cut — including the medial wall — silently
-maps to 0 vertices, so the patch keeps the full closed surface, and flattening then dies
-with an unrelated-looking `TopologyError: Euler characteristic χ = 2, expected 1`. Set
-`FS_LICENSE` explicitly before running anything beyond a bare `--version` check.
+**4. A freshly `freesurfer.import_subj()`-ed subject has NO flat map** — `quickflat`
+(and any `blend_curvature` static PNG) hard-crashes with `KeyError: 'flat'` from
+`db.get_surf(subject, "flat", ...)`. Flat maps need topological cuts, which `import_subj`
+does not make. Either fall back to inflated renders (`nilearn.plotting.plot_surf_stat_map`
+off `{hemi}.inflated` + `{hemi}.curv`) **and say that it is inflated, not flattened** — a
+curvature-only quickflat substitute silently delivers something weaker than asked for — or
+generate the cuts: [`references/autoflatten.md`](./references/autoflatten.md).
 
 ## `VertexRGB` / `blend_curvature()` vs `Vertex2D` — the alpha-channel trap
 
-Pycortex's live webgl viewer has real alpha/threshold sliders for
-`Volume` data, but **not for `Vertex` data** — a long-standing, still-open
-limitation
-([gallantlab/pycortex#323](https://github.com/gallantlab/pycortex/issues/323)).
-Three ways to get color+threshold onto a vertex map, in order of how
-"alive" the result stays after `show()`:
+The webgl viewer has alpha/threshold sliders for `Volume` data but **not for `Vertex`
+data** ([pycortex#323](https://github.com/gallantlab/pycortex/issues/323)). Three ways to
+get colour + threshold onto a vertex map:
 
 | Approach | What it is | Threshold is | Caveat |
 |---|---|---|---|
-| `cortex.Vertex(...).blend_curvature(alpha)` | Pre-blends data + curvature into one RGB image, in Python, before showing | **Baked in at call time** | The docstring says it outright: *"the colormap parameters (vmin, vmax, cmap, ...) of the original Vertex object cannot be changed later on."* No live slider, ever. Started life as a community kludge (issue #323's thread) and was later formalized as this method in [PR #425](https://github.com/gallantlab/pycortex/pull/425) — useful, but still a workaround, not first-class transparency support. |
-| `cortex.Vertex2D(dim1, dim2, ...)` | A true two-dimensional *joint* colormap (dim1 × dim2, e.g. effect × R²), rendered live in webgl | Live-adjustable (`vmin`/`vmax`/`vmin2`/`vmax2`) | Needs a proper 2D colormap image configured (`default_cmap2d` in `options.cfg`); dim2 is a joint-colormap axis (hue×saturation-style), not literally an opacity fade — reads differently from a transparency-based threshold. |
-| `cortex.VertexRGB(r, g, b, subject)` | Manually packed RGB(A) arrays | Whatever you baked in | Lowest level; `blend_curvature()` is built directly on this. |
+| `cortex.Vertex(...).blend_curvature(alpha)` | Pre-blends data + curvature into one RGB image, in Python | **Baked in at call time** | Its own docstring: *"the colormap parameters ... cannot be changed later on."* No live slider, ever. Iterate on thresholds in Python and relaunch. |
+| `cortex.Vertex2D(dim1, dim2, ...)` | A joint 2D colormap (e.g. effect × R²), rendered live | Live (`vmin`/`vmax`/`vmin2`/`vmax2`) | Needs a 2D `*_alpha` colormap; dim2 is a joint-colormap axis, not an opacity fade, and reads washed out next to Python-side compositing. |
+| `cortex.VertexRGB(r, g, b, subject)` | Manually packed RGB arrays | Whatever you baked in | Lowest level; `blend_curvature` is built on it. |
 
-**Practical implication:** if you use `blend_curvature()` (as this
-project's `visualize_mean_r2_fsaverage.py` does), pick your threshold
-*before* calling `show()` — there is no way to tune it afterward in the
-browser. Iterate on threshold values in Python and relaunch, rather than
-expecting a slider.
+For the standard look, build the curvature exactly as `blend_curvature` does —
+`(curv > 0) * contrast + brightness` off `db.get_surfinfo(subject, smooth=20)` — and
+blend it yourself. Soft/continuous curvature shading reads oddly next to pycortex's own.
 
-**`quickflat.make_figure(..., with_colorbar=True)` on a `blend_curvature()`-baked
-image draws a colorbar, but not YOUR colorbar.** Since the data+curvature are
-already pre-blended into one flat RGB image, there's no live `vmin`/`vmax`/`cmap`
-left for pycortex to introspect — it silently falls back to some default
-scale (observed: `0–255` with a generic viridis-like swatch) that has nothing
-to do with your actual data range. This doesn't error, so it's easy to publish
-a mislabeled figure. Pass `with_colorbar=False` and annotate the real
-`vmin`/`vmax`/`cmap` as text (title/caption) instead — or build a matching
-colorbar separately, as this project's `visualize_subject_model.py
-save_colorbar_pdf()` already does.
+**`quickflat.make_figure(..., with_colorbar=True)` on a baked image draws a colorbar,
+but not YOUR colorbar** — there is no live `vmin`/`vmax`/`cmap` left to introspect, so it
+falls back to a meaningless `0–255` swatch. Pass `with_colorbar=False` and annotate the
+real range yourself.
 
-**A NaN threshold silently corrupts `blend_curvature`, and the resulting
-crash is nowhere near the actual cause.** Its alpha handling is
-`alpha = np.clip(alpha, 0, 1)` — no NaN guard. `np.clip` does not turn NaN
-into 0 or 1; it stays NaN. `nan * data + (1 - nan) * curvature` is
-all-NaN, and `.astype("uint8")` on NaN is undefined behavior — numpy
-emits `RuntimeWarning: invalid value encountered in cast` and, on this
-platform, yields 0 — so **every affected dataset collapses to an
-identical, all-black RGB image**. Pycortex names/dedups datasets inside
-`Package` by a content hash of that RGB array
-(`VertexRGB.name = "__" + hash(vertices)[:16]`), so multiple NaN-thresholded
-datasets silently collide onto the same hash key. `Package.reorder()`
-isn't dedup-aware, so it reprocesses that same slot twice — the second
-pass finds the already-serialized `bytes` from the first pass instead of
-the original ndarray, and dies with:
+**A NaN threshold silently corrupts `blend_curvature`, and the crash is nowhere near the
+cause.** `np.clip` does not turn NaN into 0 or 1, so the blend is all-NaN and
+`.astype("uint8")` yields 0 — every affected dataset collapses to an identical all-black
+image. Pycortex keys datasets by a content hash of that array, `Package.reorder()` is not
+dedup-aware, and the second pass finds serialized `bytes` where it expects an ndarray:
 
 ```
 TypeError: byte indices must be integers or slices, not tuple
 ```
 
-This error has nothing to do with byte indexing conceptually. **It means
-two or more of the datasets you're showing rendered to bit-identical
-images**, almost always because a threshold/vmin/vmax computation silently
-produced NaN somewhere upstream. Before chasing the traceback, print
-`vmin`/`vmax`/your threshold variable for every dataset about to be
-shown and look for NaN.
+**It means two datasets rendered bit-identically**, almost always from a NaN threshold.
+Print every dataset's `vmin`/`vmax`/threshold before chasing the traceback.
 
 ## Don't feed cvR²-shaped data through R²-shaped auto-threshold code
 
-Full-fit encoding-model R² (non-negative, bounded `[0, 1]`) and
-cross-validated R² / cvR² (which **can be legitimately negative** for
-noise/weak voxels — a silent voxel's held-out fit is *expected* to score
-slightly below the train-mean baseline) look similar but are not
-interchangeable for auto-thresholding code. A logit-transform /
-empirical-null threshold fitter that filters its input to the open
-interval `(0, 1)` will silently discard the entire negative bulk of a
-cvR² map. If most of the map is negative — completely normal for cvR² —
-too few points survive the filter, the threshold fitter returns NaN, and
-you land straight in the `blend_curvature` hash-collision bug above.
-
-Two ways out:
-
-- Use (or write) a threshold method with an explicit non-degenerate
-  fallback — e.g. falling back to a raw percentile of the *untransformed*
-  data when the logit-domain fit fails — rather than one that can return
-  NaN outright with no fallback.
-- Better, specifically for cvR²: don't threshold the group mean at all.
-  Compare **per-subject, per-vertex**, `cvR² > cvR²_null` (a proper null
-  model's cvR², not a flat `> 0`), then display **prevalence** — the
-  fraction of subjects where the real model wins at that vertex — rather
-  than the raw group-mean magnitude. Binarizing per subject before
-  pooling also keeps very-negative noise vertices from dominating a naive
-  cross-subject average.
+Full-fit R² is non-negative and bounded; cross-validated R² **can legitimately be
+negative** (a silent voxel's held-out fit scores below the train-mean baseline). A
+logit-transform / empirical-null threshold fitter that filters to the open interval
+`(0, 1)` discards the entire negative bulk of a cvR² map, returns NaN, and lands you in
+the hash-collision bug above. Either use a threshold method with a non-degenerate
+fallback (a raw percentile of the untransformed data), or — better for cvR² — don't
+threshold the group mean at all: test **per subject, per vertex**, `cvR² > cvR²_null`
+against a real null model's cvR² (not a flat `> 0`) and display **prevalence**, the
+fraction of subjects where the model wins. Binarising per subject before pooling also
+stops very-negative noise vertices dominating the average.
 
 ## Group-vertex maps read as sparse/speckled — that's not (necessarily) a bug
 
-A prevalence-style or raw group-mean map computed **per vertex** on
-fsaverage can look extremely speckled even when there's real, robust
-signal underneath, because:
-
-- Individual anatomical differences plus imperfect fsaverage surface
-  registration mean the *exact* vertex carrying peak signal drifts from
-  subject to subject; a strict per-vertex vote rarely lines up across 20+
-  people.
-- Unsmoothed single-subject model fits are inherently noisy at the
-  voxel/vertex level.
-
-Spatial (BOLD, pre-fit) smoothing trades vertex-level precision for
-group-level coherence — worth comparing smoothed vs. unsmoothed side by
-side rather than picking one. If a baseline/reference model's smoothed
-variant hasn't been fit for every subject, a smoothed *prevalence*
-comparison against it will silently drop to whatever subset does have
-smoothed data — check coverage before trusting a printed `n=`:
-
-```bash
-find <model-dir> -name "*_smoothed_pe.nii.gz" | wc -l
-```
+Anatomical differences plus imperfect fsaverage registration mean the exact vertex
+carrying peak signal drifts between subjects, and unsmoothed single-subject fits are
+noisy — so a strict per-vertex vote rarely lines up across 20+ people. Spatial (BOLD,
+pre-fit) smoothing buys group coherence at the cost of vertex precision; compare both
+rather than picking one. If a reference model's smoothed variant was not fitted for
+everyone, a smoothed prevalence map silently drops to whatever subset has it — check
+coverage before trusting a printed `n=` (`find <model-dir> -name "*_smoothed_pe.nii.gz" | wc -l`).
 
 ## Prefer a static bundle over the live server
 
-`cortex.webgl.make_static(outdir, ds, ...)` writes plain HTML/JS/binary that
-any file server can host (`python -m http.server`). Nothing depends on a live
-Python process, so the daemon-thread death in rule 1 stops mattering; the
-output can be rsynced to a collaborator and reopened later without rebuilding
-the datasets. This is the better default for anything you want to look at more
-than once.
+`cortex.webgl.make_static(outdir, ds, ...)` writes plain HTML/JS/binary that any file
+server can host. Nothing depends on a live Python process, so rule 1 stops mattering, and
+the output can be rsynced to a collaborator. Six traps:
 
-Four traps, all of which cost real debugging time:
+- **`types` is for MORPH TARGETS only — never put `"flat"` in it.** Pycortex loads the
+  flat surface itself and stores it as UV (that is what drives the flatten slider);
+  `addSurf("flat")` renormalises it into the fiducial bounding box, and the flat z axis
+  is constant, so the divide yields inf/NaN and OpenCTM rejects the mesh with a bare
+  `CTM_INVALID_MESH`. Pass `types=("inflated",)`; flat comes along by itself.
+- **`make_static` never deletes files it did not write this run.** Old payloads linger,
+  unreferenced but accumulating (one bundle reached 235 MB against 85 MB clean). Clear
+  `<outdir>/data/` first.
+- **The generated page closes neither `</body>` nor `</html>`** — append, don't search
+  for a closing tag to insert before.
+- **`quickflat.make_figure` shells out to Inkscape** for ROI/sulci overlays; without it
+  pass `with_rois=False, with_sulci=False, with_labels=False`.
+- **`overlay_file=` is silently ignored whenever a `.ctm` is already cached.**
+  `utils.get_ctmpack` keys the cache on subject/types/method/level only and returns the
+  cached pack before `external_svg` is looked at. Pass `recache=True` with
+  `overlay_file`. For a subject shared between projects (fsaverage!) that rewrites
+  *their* cache too — move `<filestore>/<subject>/cache/<subject>_[*` aside before the
+  build and back after (`try/finally`).
+- **The browser caches the bundle's `<subject>_[inflated]_*.svg` / `.ctm` across
+  rebuilds.** Same URL, fetched by XHR (a hard reload does *not* bypass it), so a stale
+  overlay makes a rebuild look like it did nothing. Verify from a fresh origin (another
+  port) or serve with `Cache-Control: no-store`; `performance.getEntriesByType('resource')`
+  showing `transferSize: 0` confirms a cache hit.
 
-- **`types` is for MORPH TARGETS only — never put `"flat"` in it.** Pycortex
-  loads the flat surface itself and stores it as UV coordinates (that is what
-  drives the viewer's flatten slider). `addSurf("flat")` instead renormalises
-  it into the fiducial bounding box, and the flat surface's z axis is
-  constant, so the per-axis `(max - min)` divide yields inf/NaN and OpenCTM
-  rejects the mesh with a bare `CTM_INVALID_MESH`. Pass
-  `types=("inflated",)`; flat comes along by itself when the subject has it.
-- **`make_static` never deletes files it did not write this run.** Rebuilding
-  with a different dataset list leaves the old payloads behind — unreferenced
-  by `index.html`, so invisible, but accumulating. One bundle reached 235 MB
-  across three builds against 85 MB clean. Clear `<outdir>/data/` first.
-- **The generated page closes neither `</body>` nor `</html>`**, so anything
-  you append lands after the last tag and the browser reparents it. Works, but
-  do not search for a closing tag to insert before.
-- **`quickflat.make_figure` shells out to Inkscape** for the ROI/sulci overlay.
-  On a machine without it, pass `with_rois=False, with_sulci=False,
-  with_labels=False` — a freshly imported subject has no drawn ROIs anyway.
-
-`curvature_brightness=0.62, curvature_contrast=0.28, curvature_smoothness=2.0`
-flattens the default near-binary black/white curvature into a background that
-orients you without competing with the data.
+`curvature_brightness=0.62, curvature_contrast=0.28, curvature_smoothness=2.0` flattens
+the default near-binary curvature into a background that orients without competing with
+the data, and `surface_specularity=0.1` kills the glare highlights that read as data.
 
 ## Getting a real colorbar next to a blend_curvature map
 
-Two options, and the obvious one is the worse one.
-
-`Vertex2D` against a 2D `*_alpha` colormap keeps `vmin`/`vmax`/`cmap` live, so
-pycortex draws its own colorbar and the sliders work. But it moves the
-data-over-curvature blend into the shader, and the result reads noticeably
-washed out next to Python-side compositing. Pycortex also ships only ~15
-`*_alpha` maps, so anything else has to be generated (256x256 RGBA, colormap
-across dim1, alpha down dim2). And because a `BrainData`'s `name` is a
-read-only hash of its array, datasets sharing one alpha mask — which parameter
-maps legitimately do — collide in `Package.reorder` and die with
-`TypeError: byte indices must be integers or slices, not tuple`.
-
-**Better: keep `blend_curvature` and draw the legend yourself** from the
-ranges you already hold, as CSS gradients injected into the page. No
-dependency on what pycortex can introspect from a pre-blended image, and it
-works for any rendering. Track the active dataset by wrapping
-`mriview.Viewer.prototype.setData` (the single funnel every switch goes
-through) — with a probe of the implicit global `figure` for the dataset
+`Vertex2D` against a 2D `*_alpha` colormap keeps `vmin`/`vmax`/`cmap` live so pycortex
+draws its own colorbar — but the shader-side blend looks washed out, pycortex ships only
+~15 `*_alpha` maps, and datasets sharing one alpha mask collide in `Package.reorder`
+(same `TypeError` as above). **Better: keep `blend_curvature` and draw the legend
+yourself** from the ranges you already hold, as CSS gradients injected into the page.
+Track the active dataset by wrapping `mriview.Viewer.prototype.setData` (the single
+funnel every switch goes through), and probe the implicit global `figure` for the dataset
 pycortex selects during load, before the wrapper can be installed.
+
+## ROIs without Inkscape: `overlays.svg` paths from a vertex mask
+
+You can contour any vertex mask in flatmap space and write real pycortex ROIs — no
+tracing, ~2 s per subject, Dice ≈ 0.98 against the source mask. Full recipe and traps:
+[`references/roi_authoring.md`](./references/roi_authoring.md). The traps, so you know
+what you are walking into: the `rois > shapes > <g>` hierarchy is load-bearing and yields
+zero ROIs silently if you get it wrong; `get_overlay()` with default args can rewrite the
+file and eat your paths; restoring `overlays.svg` from a backup makes the next call block
+on an `overwrite?` stdin prompt forever; the viewer labels every *path*, so a ragged mask
+becomes a wall of labels; a few-mm marker cannot be contoured at all (draw a circle); the
+Inkscape probe ignores `options.cfg`; and the overlay is cached next to the `.ctm`, so
+edits do not reach a bundle until you clear the cache.
+
+## Driving the static viewer from JavaScript
+
+Everything the viewer can do is reachable from the page — that is how you give a bundle
+its own UI (map buttons, legend, opening view) and how you check a build from a
+browser-automation session.
+
+```js
+viewer.ui.set('mix', 0.5);               // 0 fiducial, 0.5 inflated, 1 flat
+viewer.ui.set('camera.azimuth', 180);    // 180 from behind, 270 right hemisphere
+viewer.ui.set('camera.altitude', 50);    // 90 level, 0.1 straight down (flatmaps)
+viewer.ui.set('camera.radius', 215);     // fsaverage ~215, a native surface ~330
+viewer.schedule();                       // repaint after ui.set
+viewer.setData('Preferred numerosity');  // by dataset name
+viewer.addEventListener('setData', e => console.log(e.name));
+viewer.loaded.done(() => { /* surfaces are in */ });
+```
+
+**`viewer.animate([...])` freezes half-way in a background tab or an off-screen iframe.**
+It interpolates on animation frames, which the browser throttles to nothing when the page
+is not visible, so an opening view lands at whatever fraction it got to (azimuth 111
+instead of 180). Animate for the look of it, then snap to the final state with `ui.set` +
+`schedule()` after a timeout.
+
+The page's globals are `viewer`, `figure` and `dataviews` (assigned in `static.html`'s
+`onload`), and `window.self !== window.top` is the cheapest "am I in an iframe" test —
+use it to hide your own panel and pycortex's `.dg` control box in an embedded copy.
 
 ## Copy-pasteable
 
-- [`references/persistent_webshow.py`](./references/persistent_webshow.py)
-  — a launch pattern that survives both the daemon-thread-exit and
-  hostname-URL gotchas above, safe to run under a background task runner.
-  Swap in your own dataset-building code where marked.
+- [`references/autoflatten.md`](./references/autoflatten.md) — cutting and flattening a
+  whole cohort (cluster recipe, FS_LICENSE, the XLA-flag abort, which recon to flatten).
+- [`references/roi_authoring.md`](./references/roi_authoring.md) — writing ROIs into
+  `overlays.svg` from a vertex mask, with all seven traps.
+- [`references/persistent_webshow.py`](./references/persistent_webshow.py) — a launch
+  pattern that survives the daemon-thread exit and the hostname URL.
 - [`references/static_bundle_with_legend.py`](./references/static_bundle_with_legend.py)
-  — `make_static` bundle plus the injected, dataset-tracking colorbar panel,
-  a multi-subject landing page, and a server. Carries the four traps above in
-  its docstring.
+  — `make_static` plus an injected, dataset-tracking colorbar panel, a landing page and a
+  server. Its docstring predates the `overlay_file`/recache and browser-cache traps above.
