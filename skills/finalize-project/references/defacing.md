@@ -77,7 +77,16 @@ verification step is not optional.
     - conda-forge
   dependencies: [python=3.11, fsl-flirt, fsl-avwutils, nibabel, numpy, scipy, matplotlib, pip, {pip: [pydeface, nitransforms]}]
   ```
-  ~1–2 min per image; run as a cluster array over images.
+  ~3–4 min per 256×256×170 image on 2 CPUs (FLIRT mutual-information
+  registration); run as a cluster array over subjects.
+  **pydeface ≥ 2.1 refuses to run unless an executable called `fsl` is on
+  `PATH` and `FSLDIR` is set** — the conda `fsl-flirt` package provides
+  `flirt` but not `fsl`. Rather than faking it, run pydeface's two FLIRT calls
+  yourself with its packaged template/mask
+  (`importlib.resources.files('pydeface') / 'data/mean_reg2mean.nii.gz'` and
+  `'data/facemask.nii.gz'`): `flirt -in template -ref img -omat m -cost
+  mutualinfo`, then `flirt -in facemask -ref img -applyxfm -init m -out mask`.
+  You get the mask directly, which is what you want anyway.
   `pydeface in.nii.gz --outfile out_defaced.nii.gz --force`;
   `--applyto sibling.nii.gz` applies the same warped mask to other images in
   the same space; `--nocleanup` keeps the warped mask file.
@@ -105,21 +114,29 @@ a fallback was needed for some images, record which.
 (reoriented, resampled, averaged over T1ws). Per input T1w fMRIPrep writes
 `…_from-orig_to-T1w_mode-image_xfm.txt` (ITK affine) when more than one T1w
 was averaged; apply its **inverse** to bring the mask to the raw grid
-(`nitransforms.linear.load(xfm, fmt='itk')`). Then **sanity-check the
-direction**: resample the raw T1w into the preproc grid with the same
-transform and correlate with `desc-preproc_T1w` — r > 0.9 means the direction
-is right; r near 0 means invert. With a single T1w and no xfm file, the
+(`nitransforms.linear.load(xfm, fmt='itk')`; with
+`nitransforms.resampling.apply(xfm, raw_img, reference=preproc_img)` the
+*forward* transform takes raw → preproc, so `~xfm` takes preproc → raw). Then
+**sanity-check the direction empirically**: resample with both directions and
+correlate with the target image inside the head. Expect r ≈ 0.7–0.9 for the
+right direction (raw vs. INU-corrected, averaged image — not > 0.9) and a
+clearly lower r for the wrong one; compare the two rather than using an
+absolute threshold. For the reference T1w the transform is ~identity and both
+directions give the same r. With a single T1w and no xfm file, the
 grids often still differ by a conform step; use header-based resampling
 (`nilearn.image.resample_to_img(mask, raw, interpolation='nearest')`) after
 checking the sforms describe the same world space.
 
 ### Visual report — a human looks at EVERY image
 
-One PNG per image, before/after side by side:
+One PNG per image:
 
-- **Sagittal maximum-intensity projection** — the profile silhouette. Nose,
-  lips, chin gone? Eyes gone?
-- **Coronal MIP** — the frontal silhouette. Symmetric removal? One side left?
+- **Frontal and lateral depth renders** — for each ray, the depth of the first
+  voxel above a head threshold (smoothed image), shaded with a directional
+  light term from the depth gradient. This is a cheap 3D surface render and it
+  is what makes a face *recognisable* (nose, lips, eye sockets, chin); a MIP
+  mostly shows bright fat and hides the relief. A montage of all subjects'
+  frontal/lateral renders (e.g. 5 × 4 grid per page) makes the review fast.
 - **Mid-sagittal slice** with the removed region overlaid in colour — shows
   where the cut runs relative to the frontal pole and cerebellum.
 - **Axial slice through the orbits.**
@@ -135,6 +152,34 @@ Things you will see: ears left in place (fine), a thin skin rim over the
 forehead (fine), an eye still visible (reject), the frontal or temporal pole
 clipped (reject), a lateral offset leaving half the face (reject —
 registration failed).
+
+## Lessons from a 39-subject run (3T Philips, oblique sagittal T1w)
+
+- **Per-image template registration failed silently on several raw T1ws.**
+  The warped face mask landed on the back of the head and neck: face fully
+  intact, cerebellum cut. `frac_head_removed` looked normal (~0.2); only
+  `brain_removed` ≫ 0 and the depth render showed it. The fMRIPrep
+  `desc-preproc_T1w` (reoriented, conformed) of the same subjects registered
+  correctly 39/39.
+- **Robust recipe that followed:** deface the fMRIPrep T1w with the template
+  method, QC it, then carry *that* mask into every raw T1w of the subject via
+  fMRIPrep's own `from-orig_to-T1w` coregistration (inverse direction, linear
+  interpolation, remove where > 0.01, **`cval=1` so voxels outside the
+  fMRIPrep grid count as removed**). One approved mask per subject, consistent
+  cuts across sessions, and the brain-clipping check is exact in fMRIPrep space.
+- **Degenerate reconstructions** (one "T1w run" was mostly noise) fail the
+  correlation check; give them the mask of a sibling image of the same session
+  on the identical grid (same shape + affine) and say so in the metrics TSV.
+- **Re-use approved masks on re-runs** (load the stored mask instead of
+  re-registering) so the released image is provably the one that was approved.
+- **gzip headers:** Python's `gzip.open` writes the temp file name and an mtime
+  into the header; bids-validator flags both (`GZIP_HEADER_FILENAME`,
+  `GZIP_HEADER_MTIME`, privacy checks). Write with
+  `gzip.GzipFile(filename='', fileobj=f, mtime=0)`.
+- **Assert non-empty listings.** A compute node with a stale share mount
+  returned empty `glob`s, so a staging job "succeeded" having copied nothing,
+  and a defacing job found no inputs. Every stage should fail loudly on an
+  empty source listing, and job wrappers should `--exclude` the bad node.
 
 ## FreeSurfer volumes kept in a derivatives release
 
