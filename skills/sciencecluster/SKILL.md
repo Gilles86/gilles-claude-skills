@@ -1,6 +1,6 @@
 ---
 name: sciencecluster
-description: SLURM cluster (UZH sciencecluster) operational knowledge — submitting jobs, conda activation in SLURM context, GPU constraints, log conventions, common failure modes (NFS dogpile, cuInit race, partition contention), and cluster-only vs local code paths. Use this skill whenever the user is working with sciencecluster, SLURM (sbatch, squeue, scontrol, sacct), conda envs on the cluster, GPU jobs with `--gres`, the user mentions "the cluster", or the working directory contains a `slurm_jobs/` folder. Also use for diagnosing held / failed / zombie SLURM jobs.
+description: SLURM cluster (UZH sciencecluster) operational knowledge — submitting jobs, conda activation in SLURM context, GPU constraints, log conventions, common failure modes (NFS dogpile, cuInit race, partition contention), and cluster-only vs local code paths. Use this skill whenever the user is working with sciencecluster, SLURM (sbatch, squeue, scontrol, sacct), conda envs on the cluster, GPU jobs with `--gres`, the user mentions "the cluster", or the working directory contains a `slurm_jobs/` folder. Also use for diagnosing held / failed / zombie SLURM jobs, and for copying data from a departmental SMB share (NAS) straight onto the cluster.
 ---
 
 # UZH sciencecluster — SLURM operational knowledge
@@ -209,6 +209,15 @@ SLURM-aware specifics (driver placement, plugin quirks, recovery
 after a crashed driver). This skill and that one are designed to be
 read together.
 
+**7. Never `sbatch --export=ALL,...` — pass only the variables the script
+reads** (`--export=PARTICIPANT_LABEL=03,MASK=...`). `ALL` makes SLURM
+retrieve the login environment per task on the compute node; when tens of
+jobs start together that times out and they land in `user env retrieval
+failed requeued held`. Scripts that `#!/bin/bash` and source conda
+themselves do not need it (HOME is still set). Held already? `scontrol
+release` them (recipe in `references/array_throttling.md`). Do **not**
+diagnose it as bad nodes or a slow group lookup — it is almost always this.
+
 ## Building conda envs: sbatch the build, but **no GPU node needed**
 
 For the modern pip-wheel CUDA stack
@@ -264,9 +273,10 @@ reading.
 
 - `references/debug_qos.md` — `--qos=debug` fast-lane smoke tests
   when fair-share has buried you
-- `references/array_throttling.md` — `%N` and `ArrayTaskThrottle`
-  for NFS dogpile; releasing `user env retrieval failed requeued held`
-  tasks
+- `references/array_throttling.md` — when NOT to throttle (usually);
+  `Reason=JobArrayTaskLimit` is your own `%N`, not the cluster; the
+  in-script stagger beats `%N`; releasing `user env retrieval failed
+  requeued held` tasks
 - `references/idempotent_resubmit.md` — per-(unit, stage) `done()`
   predicates; stale-chunk pitfall with `chunk-NNNN-of-MMMM.npz`
 - `references/partition_swap.md` — `scontrol update Partition=` on PD
@@ -278,6 +288,13 @@ reading.
 
 - `references/exit_codes.md` — `0:125` (host RAM) vs `1:0` (GPU VRAM
   / Python raise) vs `TIMEOUT`
+
+**Getting data onto the cluster**
+
+- `references/smb_share_pull.md` — pull straight from a departmental
+  SMB/NAS share with `smbclient` + a user-made Kerberos ticket
+  (`kinit`), instead of share → laptop → cluster; ticket lives on one
+  login node only; read-only on append-only archives
 
 **Workstation hygiene**
 

@@ -4,12 +4,14 @@
 # Designed for embarrassingly-parallel per-(subject, chunk) fits where
 # each task runs ~10-30 min on CPU. Submit with:
 #
-#   sbatch --array=1-300%50 --time=00:30:00 \
-#          --export=ALL,SUBJECT=2,MODEL=4,N_CHUNKS=40 \
+#   sbatch --array=1-300 --time=00:30:00 \
+#          --export=SUBJECT=2,MODEL=4,N_CHUNKS=40 \
 #          array_cpu_template.sh
 #
-# Tune --array=...%N to throttle concurrent task starts (see the
-# sciencecluster skill's ArrayTaskThrottle section).
+# Do NOT add %N unless you have a reason. This script already staggers
+# its own start (see the sleep below), which is what the dogpile actually
+# needs; %N instead caps concurrency for the job's whole life and costs
+# wallclock proportional to --time. See references/array_throttling.md.
 
 #SBATCH --job-name=cpu_array
 #SBATCH --account=<your-account>

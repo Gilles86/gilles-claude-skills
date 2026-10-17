@@ -11,7 +11,7 @@
 #
 # Submit with array throttle to avoid NFS dogpile:
 #
-#   sbatch --array=1-100%30 --time=00:35:00 \
+#   sbatch --array=1-100 --time=00:35:00 \
 #          --export=ALL,SUBJECT=2,MODEL=4,N_CHUNKS=10 \
 #          array_gpu_template.sh
 
