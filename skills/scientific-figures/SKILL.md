@@ -105,6 +105,26 @@ The things that most reliably separate a real scientific figure from a generic s
                    color=o.get('tc', col), fontsize=fs, va='center')
    ```
 
+   **A dashed or dotted glyph must end on a whole dash.** Dash patterns are
+   absolute (and matplotlib multiplies them by the line width), so a ~10 pt key
+   segment ends wherever the cycle happens to fall and leaves a stub — which
+   reads as a *third* linestyle, not as the one it keys. Keep the curve's own
+   pattern and round the glyph's LENGTH instead, after layout has settled:
+
+   ```python
+   def fit_dashes(fig, glyphs):          # glyphs: (line, ax, x0, nominal_seg)
+       fig.canvas.draw()
+       for ln, ax, x0, seg in glyphs:
+           w_pt = ax.get_window_extent().width * 72 / fig.dpi
+           on, off = (v * ln.get_linewidth()
+                      for v in ln._unscaled_dash_pattern[1][:2])
+           n = max(2, round((seg * w_pt + off) / (on + off)))
+           ln.set_xdata([x0, x0 + (n * (on + off) - off) / w_pt])
+   ```
+
+   Two full dashes read cleanly; one-and-a-stub does not. Never resize the
+   pattern to fit the glyph — then the glyph no longer matches the curve.
+
    This is the same principle as direct labeling (rule 4): the key belongs next
    to the ink it explains. Reserve `ax.legend()` for when there are too many
    conditions to place by hand, and even then `frameon=False` and off the data.

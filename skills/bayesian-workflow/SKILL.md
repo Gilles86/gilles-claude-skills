@@ -49,6 +49,23 @@ do while all being stuck in the same bad place.
 Non-centered parameterization is the first thing to try for a hierarchical
 funnel. Divergences concentrated at small group-SD values are the signature.
 
+**One stuck chain is not a geometry problem — check before you diagnose one.**
+`r_hat` 1.1 with **zero divergences** and very low ESS is the signature of a
+single chain sitting somewhere else, not of a non-identified model. Print the
+per-chain posterior means of the worst parameters and look at the spread
+between chains relative to the within-chain SD:
+
+    m = ds[v].values.mean(axis=1)              # (chain,)
+    between_within = (m.max() - m.min()) / ds[v].values.std()
+
+Three chains agreeing closely and one offset is a stuck chain: re-run with a
+different init (`pathfinder` seeds each chain from a variational draw in the
+typical set) rather than changing the model. Measured case (tms_risk, 2026-09):
+`r_hat` 1.11, ESS 26, 0 divergences; three chains at 2.66 and one at 2.52 on a
+prior mean, while the *contrast of interest* was identical across all four
+chains. The model was fine. Do not announce "non-identified" from the summary
+line alone -- it is a claim about the model, and it needs this check.
+
 ## Identifiability before interpretation
 
 **Ask the design question in words first.** For each pair of parameters:
@@ -84,6 +101,36 @@ cross-condition ratio of response SD with the ratio of |slope|. A positive
 correlation means the design has leverage; near zero means the fit cannot
 separate the stages no matter how long it runs.
 
+**A parameter can be unidentified even with no pairwise trade-off, if its map
+to the observable is locally flat.** Behaviour constrains some derived
+quantity, not the raw parameter. If `d(observable)/d(parameter) ~ 0` at the
+fitted point, the parameter's posterior is wide (or its contrast is null) no
+matter how much data you have -- and reporting a contrast on it says nothing.
+Worked case: a Bayesian-observer model where behaviour depends on
+`w*sigma_e` with `w = sigma_p^2/(sigma_p^2 + sigma_e^2)`. That map RISES to a
+maximum at `sigma_e = sigma_p` and falls after, so a fit sitting near
+`sigma_e ~ sigma_p` has `d(w*sigma_e)/d(sigma_e) ~ 0`: sigma_e moved 40% across
+the payoff range while the accumulated noise stayed at 0.226 / 0.227 / 0.221.
+Two fits of the same data disagreed 2x on sigma_e while agreeing on
+`w*sigma_e`, purely because they sat at different points on that curve.
+
+Before reporting any parameter contrast, differentiate the parameter ->
+observable map at the posterior mean. If it is flat, report the identified
+quantity instead, and say why.
+
+**The group-level posterior correlation matrix is a 5-line ridge detector.**
+Stack the group-level draws and correlate them; |r| > 0.6 between parameters
+that should be independent names the ridge directly, and it costs nothing:
+
+    X = np.stack([draws[name] for name in names])   # (param, draw)
+    C = np.corrcoef(X)
+
+Measured case: threshold `a`, urgency `w_0` and two prior SDs formed a block at
+r = 0.59-0.90 -- the model's "evidence scale" with no single parameter to live
+in, because the natural gain had been pinned at 1. The noise parameters were
+orthogonal to it (|r| < 0.3), which is what said they were weakly determined
+rather than trading off. Run this before interpreting any parameter.
+
 **Parameter recovery is not optional for a new parameter.** Simulate datasets
 from known parameter values spanning the plausible range (same subjects, same
 trial counts, same design), refit, and plot recovered against true. What you
@@ -97,6 +144,34 @@ closed form and cap the prior at it rather than letting the sampler wander:
 for an N-point grid over a circular variable, a von Mises concentration above
 `(N / 2*pi)**2` is unresolvable. State the ceiling next to any estimate that
 approaches it.
+
+## Re-evaluating a stored trace
+
+A posterior only means something against the model that produced it, and the
+mismatch is usually **silent**. Rebuilding "the same" model from today's
+defaults is the single most repeatable way to compute nonsense from a good fit.
+
+- **Stamp every option that changes the posterior into the trace** -- structural
+  flags, which parameters are ablated, the prior spec, the library commit -- and
+  **read them back** when rebuilding. Not the current defaults.
+- The failure is silent when the parameter set happens to match (you get the
+  wrong graph, no error) and confusing when it does not (`KeyError`, or an
+  assert about the parameter set). Both happened in one session.
+- Assert the rebuilt parameter set against the stamped one, and gate on a
+  posterior-predictive grand mean, before using anything downstream.
+- **A variant's parameter set is not the union of all variants'.** An ablated
+  parameter is simply absent; code that loops over "the" parameter list must
+  skip what this trace does not have.
+
+**The same symbol can be a different physical quantity in two models.** Before
+comparing a parameter across likelihoods, check its units. A noise SD in a
+static choice rule is a trial-level SD of the percept; the same symbol in a
+race is a within-trial DIFFUSION coefficient (evidence per sqrt(time)), and
+models that set them numerically equal are making an assumption, not an
+identity. Measured consequence: at the same nominal sigma the race implied
+dP/d(evidence) = 2.68 per log unit against the choice model's 1.64, because
+integration averages within-trial noise away. Compare a unit-free derived
+quantity (choice sensitivity, percent change), never the raw parameter.
 
 ## Posterior predictive checks
 
@@ -165,6 +240,22 @@ observed points, direct labels, caption language — belongs to the
 
 ## Reporting
 
+**`P(theta > 0) = 0.96` is not "significant", and it is not an interval.** It
+is a one-sided posterior mass. Report the credible interval alongside it, and
+if the interval spans zero, say so in the same sentence -- a directional
+hypothesis makes the one-sided number the *relevant* summary, not a licence to
+drop the interval. A measured pair from one session: +17.3% with P(>0) = 0.963
+and a 95% CrI of [-1.5, +40.2].
+
+**Correlating per-subject parameters: integrate over draws.** A per-participant
+estimate is a posterior, not a number. Correlating posterior MEANS discards the
+per-subject uncertainty and then inherits partial pooling's shrinkage, which
+inflates the result; compute `r` per draw instead and report the posterior over
+`r`. Measured: r = 0.046 [-0.30, +0.36] draw-integrated versus 0.197 from
+posterior means -- a fourfold difference on the same data. When correlating the
+same parameter between two MODELS, the point-estimate version is inflated the
+same way.
+
 State, every time: sampler and version, chains/draws/tuning, `target_accept`,
 divergence count, worst r_hat, minimum ESS, and what the PPC showed. If a
 parameter is at a resolution ceiling or trading off with another, say it in
@@ -180,6 +271,13 @@ the same sentence as the estimate.
 - Error bars on the observed points of a PPC
 - Comparing models by ELPD without the SE of the difference
 - Interpreting a parameter pinned at the edge of its prior as an estimate
+- Rebuilding a model from current defaults to re-evaluate an older trace
+- Reporting a contrast on a parameter whose map to the observable is flat there
+- Quoting `P(theta > 0)` without the credible interval
+- Correlating posterior means of per-subject parameters and calling it the correlation
+- A hard clamp (`max(x, eps)`) inside a likelihood: it creates a zero-gradient
+  region that silently stops the data informing those parameters. Check how
+  often it binds, and prefer a smooth link
 
 ## Operational traps
 

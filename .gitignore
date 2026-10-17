@@ -26,3 +26,6 @@ __pycache__/
 # Skill test workspaces (if you ever run skill evals locally)
 *-workspace/
 evals/results/
+
+# Packaged skill zips (build artefacts)
+*.zip
