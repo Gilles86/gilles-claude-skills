@@ -104,29 +104,39 @@ either account — so **every `JobArrayTaskLimit` you see there is your own**.
 Other reasons that are NOT yours: `AssocMaxJobsLimit`, `QOSMaxJobsPerUserLimit`,
 `Resources`, `Priority`.
 
-## `--export=ALL` makes the dogpile much more likely — usually drop it
+## A bare `--export=VAR` list triggers env retrieval — use `ALL,VAR`
 
-`--export=ALL` (and bare `--export=ALL,VAR=x`) tells SLURM to *retrieve the
-submitting user's environment* on each compute node, which is precisely the
-step that fails under load. Four arrays of 19 tasks submitted back-to-back put
-**all 44 pending tasks** into `user env retrieval failed requeued held` on
-2026-08-05 — well under the ~100-task threshold, because the `--export=ALL`
-retrieval multiplies the per-task cost.
+`user env retrieval failed requeued held` only happens when SLURM runs
+`--get-user-env` on the compute node. `--export=VAR=x` (a list without `ALL`)
+and `--export=NONE` turn that on **implicitly**; `--export=ALL,VAR=x` and the
+default (no `--export`) do not — the job inherits the submitting shell's env.
 
-If the job script sources conda itself (`. $HOME/init_conda.sh && conda
-activate <env>`, which every template here does) it does **not** need the login
-environment. Pass only what the script actually reads:
+Verified on sciencecluster 2026-10-19 (slurm 25.05.4) with one tiny job per mode:
+
+| Submitted with | Submit-shell-only var | HOME / PATH in job | Env retrieved? |
+|---|---|---|---|
+| `--export=MODE=x` | absent | login `PATH` (`/snap/bin`, games) | **yes** |
+| `--export=ALL,MODE=x` | present | submit shell's `PATH` | no |
+| `--export=NIL` | absent | `HOME` empty, minimal `PATH` | no (but `$HOME` breaks) |
+
+Every array held on 2026-10-19 (40 tasks across 11 arrays) had been
+submitted with a bare list (`--export=MIN_CVR2=0.05`, `--export=DATASET=value2`, …).
+An earlier version of this section claimed the reverse (that `ALL` triggers
+retrieval); that was a misattribution.
 
 ```bash
-# fragile: forces per-task env retrieval
-sbatch --array=1-19 --export=ALL,NVOX=100,TAG=nvox100 job.sh
-
-# robust: SLURM ships just these two variables
+# fragile: implicit --get-user-env on every task
 sbatch --array=1-19 --export=NVOX=100,TAG=nvox100 job.sh
+
+# robust: no retrieval; the job inherits this shell's env plus the two vars
+sbatch --array=1-19 --export=ALL,NVOX=100,TAG=nvox100 job.sh
 ```
 
-**Dropping `--export=ALL` is a better fix than throttling** — it removes the
-cause instead of spreading it out, and costs no wallclock.
+Using `ALL,VAR` is a better fix than throttling — it removes the cause instead
+of spreading it out, and costs no wallclock. Side effect to know: with `ALL`
+the job sees whatever the submitting shell had (a stray `PYTHONPATH`, an
+activated conda env). Job scripts that set their own interpreter path
+(`exec <env>/bin/python`) are unaffected.
 
 ## Semantics
 
@@ -156,6 +166,6 @@ should change from `(... held)` to `(Priority)`.
 ## Cross-array dogpile
 
 Across many parallel arrays the dogpile is global (NFS reads from `$HOME`
-regardless of which array). If held tasks keep appearing even without
-`--export=ALL`, put `sleep 30` between your `sbatch` calls rather than
+regardless of which array). If held tasks keep appearing even with
+`--export=ALL,...`, put `sleep 30` between your `sbatch` calls rather than
 throttling each array.

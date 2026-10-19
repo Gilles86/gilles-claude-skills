@@ -88,7 +88,13 @@ Per-user placeholders (substitute from the project's CLAUDE.md):
   and as a backstop put `export TMPDIR=/scratch/$USER/tmp` in the cluster
   `~/.bash_profile` — `sbatch` propagates the submission environment, so
   even scripts that forget the line inherit a safe temp dir. Sweep old
-  dirs occasionally (`rm -rf /scratch/$USER/tmp`).
+  dirs occasionally (`rm -rf /scratch/$USER/tmp`). **Caveat (verified
+  2026-10-19):** the backstop only works if the `export` sits ABOVE any
+  "if not interactive, return" guard, and only for jobs submitted from an
+  interactive login shell. `sbatch` run via `ssh host 'sbatch …'` (how agents
+  submit) inherits a non-interactive env, so test jobs saw `TMPDIR=/tmp`.
+  Put the per-job `export TMPDIR=…` line in the script; don't rely on the
+  backstop.
 
 ## Templates
 
@@ -209,14 +215,19 @@ SLURM-aware specifics (driver placement, plugin quirks, recovery
 after a crashed driver). This skill and that one are designed to be
 read together.
 
-**7. Never `sbatch --export=ALL,...` — pass only the variables the script
-reads** (`--export=PARTICIPANT_LABEL=03,MASK=...`). `ALL` makes SLURM
-retrieve the login environment per task on the compute node; when tens of
-jobs start together that times out and they land in `user env retrieval
-failed requeued held`. Scripts that `#!/bin/bash` and source conda
-themselves do not need it (HOME is still set). Held already? `scontrol
-release` them (recipe in `references/array_throttling.md`). Do **not**
-diagnose it as bad nodes or a slow group lookup — it is almost always this.
+**7. Use `--export=ALL,VAR=...` (or no `--export`) — never a bare
+`--export=VAR=...` list.** A list WITHOUT `ALL` (and `--export=NONE`) makes
+SLURM implicitly run `--get-user-env` on the compute node (`su - $USER -c env`);
+when tens of tasks start together that retrieval times out and they land in
+`user env retrieval failed requeued held`. With `ALL` the job inherits the
+submitting shell's environment and **no retrieval happens**. Verified
+empirically 2026-10-19 (slurm 25.05): `--export=MODE=x` job had a fresh login
+`PATH`/`HOME` (retrieved); `--export=ALL,MODE=x` carried a submit-shell-only
+variable and no retrieval; every held array that day had been submitted with a
+bare list. `--export=NIL` also avoids retrieval but leaves `HOME` empty, which
+breaks scripts using `$HOME`. Held already? `scontrol release` them (recipe in
+`references/array_throttling.md`). (An earlier version of this rule said the
+opposite; it was wrong and caused the 2026-10 holds.)
 
 ## Building conda envs: sbatch the build, but **no GPU node needed**
 
