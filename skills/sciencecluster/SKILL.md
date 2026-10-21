@@ -225,7 +225,14 @@ empirically 2026-10-19 (slurm 25.05): `--export=MODE=x` job had a fresh login
 `PATH`/`HOME` (retrieved); `--export=ALL,MODE=x` carried a submit-shell-only
 variable and no retrieval; every held array that day had been submitted with a
 bare list. `--export=NIL` also avoids retrieval but leaves `HOME` empty, which
-breaks scripts using `$HOME`. Held already? `scontrol release` them (recipe in
+breaks scripts using `$HOME`. **Second cause — a sick node (verified
+2026-10-21):** jobs submitted *with* `--export=ALL` were held too, all 148 on
+ONE node (`u24-chaihm0-651`) that had started failing launches at 21:40 while
+still showing `mixed` in sinfo, so it kept eating jobs (1 s REQUEUED each).
+Diagnose: `sacct -u $USER -S <today> -D -X -n --format=State,NodeList%24 | sort
+| uniq -c` — requeues piling on one node = black-hole node. Fix: for each held
+job `scontrol update JobId=<id> ExcNodeList=<node>` then `scontrol release
+<id>`; **append** to an existing ExcNodeList, don't overwrite it. Held already? `scontrol release` them (recipe in
 `references/array_throttling.md`). (An earlier version of this rule said the
 opposite; it was wrong and caused the 2026-10 holds.)
 
