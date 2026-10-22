@@ -59,6 +59,7 @@ Once the outline is agreed, write the `.md` deck using the style block and patte
 
 - **One self-contained `.md` per talk** (e.g. `talk_name.md`), built by `build.sh`. Workshops with several independent vignettes can use numbered decks (`1_foo.md`, `2_bar.md`).
 - **Repo layout:** the deck `.md` at the relevant level, plus `figures/` (final figures), `resources/` (the outline doc, raw assets, source material), `build.sh`, and a `README.md`. Mirror `neuroimaging_encoding_models2026/` (single research talk) or `computation-in-neuroeconomics-workshop2025/` (multi-vignette workshop + exercise notebooks).
+- **Every study gets a paradigm slide before its first result.** Show the experiment from the participant's side: what they see (the actual screens, with timing), what they do, and what is manipulated (conditions, sessions, n). Results only make sense once the audience has done the task in their head. This holds even in a compressed talk: cut a result slide before you cut a paradigm slide, and merge task + key manipulation onto one slide if time is short. The same goes for each study in a multi-project talk, not just the first one. In the outline, every study section starts with a `[FIGURE: paradigm]` entry.
 - **Section dividers** are HTML comments in the source, so the structure is visible while editing:
   ```
   <!-- ============================================================== -->
