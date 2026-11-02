@@ -53,8 +53,8 @@ Amsterdam, Boston, Marseille, Melbourne and Paris.
   code. **Authors:** de Hollander, Renkert, Ruff, Knapen. License: MIT.
 - **Code and issues:** <https://github.com/Gilles86/braincoder>
 - **Documentation:** <https://braincoder-devs.github.io/> (tutorial lessons 1–7 and a
-  gallery of examples; start with the lessons). It may lag a release: on 2026-11-02 it
-  showed 0.6.0 while the code was already at 0.6.1. Rebuild it with `scripts/publish_docs.sh`.
+  gallery of examples; start with the lessons). It is published by hand with
+  `scripts/publish_docs.sh`, so it can lag a release.
 - **Cite:** de Hollander, G., Renkert, M., Ruff, C. C., & Knapen, T. H. *braincoder*.
   Zenodo. DOI [10.5281/zenodo.10778413](https://doi.org/10.5281/zenodo.10778413). A
   methods paper is in preparation (benchmarks in `Gilles86/paper_braincoder`).
