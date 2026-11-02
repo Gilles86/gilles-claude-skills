@@ -1,6 +1,6 @@
 ---
 name: sciencecluster
-description: SLURM cluster (UZH sciencecluster) operational knowledge — submitting jobs, conda activation in SLURM context, GPU constraints, log conventions, common failure modes (NFS dogpile, cuInit race, partition contention), and cluster-only vs local code paths. Use this skill whenever the user is working with sciencecluster, SLURM (sbatch, squeue, scontrol, sacct), conda envs on the cluster, GPU jobs with `--gres`, the user mentions "the cluster", or the working directory contains a `slurm_jobs/` folder. Also use for diagnosing held / failed / zombie SLURM jobs, and for copying data from a departmental SMB share (NAS) straight onto the cluster.
+description: SLURM cluster (UZH sciencecluster) operational knowledge — including the fix for tasks stuck in "user env retrieval failed requeued held" (scripts/heal_env_holds.sh) — submitting jobs, conda activation in SLURM context, GPU constraints, log conventions, common failure modes (NFS dogpile, cuInit race, partition contention), and cluster-only vs local code paths. Use this skill whenever the user is working with sciencecluster, SLURM (sbatch, squeue, scontrol, sacct), conda envs on the cluster, GPU jobs with `--gres`, the user mentions "the cluster", or the working directory contains a `slurm_jobs/` folder. Also use for diagnosing held / failed / zombie SLURM jobs, and for copying data from a departmental SMB share (NAS) straight onto the cluster.
 ---
 
 # UZH sciencecluster — SLURM operational knowledge
@@ -17,6 +17,31 @@ rules that apply to every job, and a reference index — that's it.
 Topical playbooks (apptainer, GPU jobs, cuInit race, exit codes,
 partition swap, …) live in `references/` and load on demand. If you
 hit a symptom that matches a reference title, read that file.
+
+## `user env retrieval failed requeued held` → run `scripts/heal_env_holds.sh`
+
+Tasks pile up as `PD (user env retrieval failed requeued held)`? **Don't
+release by hand, run the healer** (on the login node; it only calls
+squeue / sacct / scontrol):
+
+```bash
+~/git/gilles-claude-skills/skills/sciencecluster/scripts/heal_env_holds.sh --dry-run   # look
+~/git/gilles-claude-skills/skills/sciencecluster/scripts/heal_env_holds.sh             # fix
+```
+
+It finds the nodes the launches failed on (a sick node that `sinfo` still
+calls `mixed` eats dozens of tasks in minutes; it is the usual cause),
+appends them to each held task's `ExcNodeList`, releases in waves of 25, and
+stops if a wave gets held again (then the cause is a bare `--export=VAR`
+list: resubmit with `--export=ALL,VAR=...`). Bad nodes go to
+`~/.slurm_bad_nodes`; pass them to new big arrays:
+`sbatch --exclude=$(cat ~/.slurm_bad_nodes) ...` (prune the file when the
+nodes are healthy again).
+
+**Prevention: the healer runs every 15 min from `scrontab`**
+(`scripts/heal_env_holds.scrontab`; check with `scrontab -l`). If it is
+missing, install it as that file says. Background and the manual
+procedure: `references/array_throttling.md` § "Diagnose held tasks".
 
 ## Constants
 

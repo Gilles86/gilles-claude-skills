@@ -1,0 +1,5 @@
+# Auto-heal "user env retrieval failed requeued held" every 15 min.
+# Install (merges with an existing scrontab; edit <account> and <home> first):
+#   (scrontab -l 2>/dev/null | grep -v heal_env_holds; cat heal_env_holds.scrontab) | scrontab -
+#SCRON --account=<account> --partition=standard --time=00:10:00 --mem=500M --cpus-per-task=1 --job-name=heal_env_holds --output=<home>/logs/heal_env_holds.log --open-mode=append
+*/15 * * * * $HOME/git/gilles-claude-skills/skills/sciencecluster/scripts/heal_env_holds.sh
