@@ -145,8 +145,12 @@ because those analyses are no longer comparing models.
 
 - **Cost:** K shuffles × folds × models. Bank at most about 2,000 voxels per ROI to keep it affordable.
 - **Timeseries:** the row shuffle and stacking above assume single-trial betas. For BOLD timeseries,
-  shuffling rows destroys autocorrelation, so the null would not match the data. This needs a
-  shuffle that keeps the temporal structure, and we haven't validated one yet.
+  shuffling rows destroys autocorrelation, so the null would not match the data, and we have no
+  validated alternative. When runs share a stimulus sequence, use a **model-free reliability
+  selection** instead: within each fold's training runs, predict each run by the mean timecourse
+  of the others, and keep voxels with R² > 0. It needs no fits and can't favour an encoding model.
+  It has no calibrated false-positive rate, and it misses voxels that respond only to what differs
+  between runs, so don't describe it as equivalent to the permutation rule.
 - **Shared parameters:** stacking is invalid when voxels share a parameter.
 - **It doesn't deal with extreme-variance voxels:** when scoring by pooled R² you still need the check
   above. The median over voxels is much less exposed.
