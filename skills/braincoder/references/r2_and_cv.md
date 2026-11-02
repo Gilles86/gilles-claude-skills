@@ -96,6 +96,64 @@ does not favour any encoding model. Half of all voxels can fail it, and they giv
 - Signal voxels vanish in frontal and parietal ROIs (V1 83%, V3 75%, IPS 12%, SPL1 1.7%,
   FEF 0.4%). Show n per ROI and don't interpret a median over 3 subjects.
 
+## Model-neutral voxel selection for model comparison
+
+This is the rule used in our single-trial projects. Which voxels enter the comparison must not
+favour any of the models being compared, and the held-out data must play no part in choosing them.
+
+**Never select on one model's own score.** In one project, voxels were selected by "richer model
+beats the null in cvR²" and that richer model then won in 24 of 24 subjects. Selecting instead
+on the simplest nested model, which tilts the test the other way, gave 2 of 24. That is a
+complete reversal from the selection alone, and it happened even though the score was held out.
+
+**The rule** (per fold, on training data only, scored on the held-out run):
+
+1. Fit every model to the real data and to K label shuffles, with exactly the same procedure,
+   including grid, nested starts and gradient descent. Each shuffle is one relabelling seen by all
+   models. For single-trial betas, shuffle rows within run. The shuffles can then be stacked as
+   extra voxels in one fit, because each voxel is independent.
+2. Per model, compare training R² with that model's own pooled null:
+   `p_m(v) = (1 + #{null R²_m ≥ R²_m(v)}) / (1 + pool)`. A null copy never enters its own pool.
+3. Take `T(v) = max_m −log10 p_m(v)`: a voxel qualifies if *any* model beats its null. Because each
+   model is standardised against its own null, a flexible model gets no head start.
+4. Select within each ROI with permutation FDR (SAM step-up, `π0 = 1`), then apply a shuffle-level
+   gate: count discoveries `D` for each copy treated as data, and keep the ROI's selection only if
+   `(1 + #{D_k ≥ D_0}) / (1 + K) ≤ .05`. This needs K + 1 ≥ 20 copies; with few shuffles per
+   fold, pool the null copies across folds.
+5. For each fold, take each model's median held-out cvR² over that fold's voxels, then average over
+   folds. Test paired differences between models across participants.
+
+**Why each part is there:**
+
+- **The gate:** one relabelling lifts R² in many voxels at once, so voxels aren't independent
+  units; the shuffle is the unit of exchangeability. In a per-fold ROI setting, min-p + BH at
+  q = .05 made at least one discovery in 22% of pure-noise shuffles. The gated rule made one in
+  under 1% there, and its bound holds whatever the voxel dependence.
+- **Per fold:** selecting on full-data fits inflated the winning model's advantage over most
+  competitors by 10–30% in one comparison.
+- **Check the selection itself:** treat each shuffle as data, take the top 5% of voxels by `T`, and
+  confirm which model supplies the maximum and that the real held-out Δ cvR² there matches that over
+  all voxels. The neutrality held in the example, but it should be shown each time.
+- **Report sensitivity rules** (min-p + BH at two q values, and the winning model's own null) next
+  to the primary rule, plus the number of participants with any selection. A gate can remove a
+  whole participant × ROI.
+
+Use a separate rule for description and decoding, such as the model's own null with BH per area,
+because those analyses are no longer comparing models.
+
+**Limits:**
+
+- **Cost:** K shuffles × folds × models. Bank at most about 2,000 voxels per ROI to keep it affordable.
+- **Timeseries:** the row shuffle and stacking above assume single-trial betas. For BOLD timeseries,
+  shuffling rows destroys autocorrelation, so the null would not match the data. This needs a
+  shuffle that keeps the temporal structure, and we haven't validated one yet.
+- **Shared parameters:** stacking is invalid when voxels share a parameter.
+- **It doesn't deal with extreme-variance voxels:** when scoring by pooled R² you still need the check
+  above. The median over voxels is much less exposed.
+
+Code: `braincoder.selection` (`PermutationSelector`, `NullBank`) exists only on the `keras-backend`
+branch, not in 0.6.2. The gated rule is separate project code for now (pure numpy).
+
 ## Which null
 
 | Null | Prediction | Use |

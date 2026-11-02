@@ -301,7 +301,9 @@ weights = WeightFitter(model, centers, data, paradigm).fit(alpha=1.)
 ## Voxel selection
 
 **Select inside the training fold.** Selecting on R² from data that includes test trials
-makes decoding circular.
+makes decoding circular. **To compare models, select model-neutrally:** any model beats its own
+permutation null, never one model's own score. Recipe in
+[`references/r2_and_cv.md`](./references/r2_and_cv.md).
 
 - `fit_r2_mixture` fits two Gaussians on logit(R²), dropping NaN and non-positive values; it
   needs at least 50 usable voxels. `r2_fdr_threshold` returns `inf` if nothing reaches α.
