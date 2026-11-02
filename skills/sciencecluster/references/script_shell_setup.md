@@ -36,3 +36,13 @@ pattern sabotaged a lot of old scripts.
 `source /etc/profile` works too (explicit; same chain). Don't
 `source /etc/profile.d/lmod.sh` alone — it defines `module` but
 leaves `MODULEPATH` empty.
+
+## Why `module` "used to work" in a `#!/bin/bash` script
+
+Jobs submitted with an `--export` list (`--export=ALL,VAR=x` included) get the
+compute node's login environment merged in by slurmd (`--get-user-env`), which
+brings `MODULEPATH` and the `module` function along. Submitted without a list
+(the fix for `user env retrieval failed requeued held`, see `SKILL.md`) from a
+non-interactive `ssh 'sbatch …'`, they have neither (verified 2026-11-02). So
+when you change a submit line, switch scripts that call `module` to
+`#!/bin/bash -l`.

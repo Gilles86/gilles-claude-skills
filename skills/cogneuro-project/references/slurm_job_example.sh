@@ -12,7 +12,8 @@
 #   * Resource budget + walltime comments document *why* the choice was made
 #     (which subjects/sessions need this much, what failed at lower values).
 #   * --output to ~/logs/<jobname>_%j.txt (see sciencecluster skill).
-#   * Inputs come via --export key=value, NOT positional args. Each input has
+#   * Inputs come as env vars set on the call (KEY=value sbatch job.sh; NOT an
+#     --export list, which causes env-retrieval holds). Each input has
 #     a documented default if unset:
 #         PARTICIPANT_LABEL — falls back to $SLURM_ARRAY_TASK_ID for arrays
 #         SESSION, FMRIPREP_DERIV, SMOOTHED, DEBUG — sensible defaults
@@ -40,9 +41,9 @@
 # case and should be avoided unless there is a specific reason.
 #
 # Usage:
-#   sbatch --export=PARTICIPANT_LABEL=pil02 fit_glmsingle.sh
+#   PARTICIPANT_LABEL=pil02 sbatch fit_glmsingle.sh
 #
-# Optional overrides (--export key=value):
+# Optional overrides (KEY=value in front of sbatch):
 #   SESSION         space-separated session numbers; omit to fit all sessions
 #   FMRIPREP_DERIV  fmriprep derivative label (default: fmriprep)
 #   SMOOTHED        set to "1" to smooth BOLD before fitting (default: off)

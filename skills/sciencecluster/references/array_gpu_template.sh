@@ -4,15 +4,15 @@
 # Key differences from the CPU template:
 #  - --gres=gpu:1                  request one GPU
 #  - --constraint="L4|V100|A100"   tolerate any of these GPU types
-#  - 30s random startup stagger    defuses the cuInit race when many
-#                                  tasks land on the same 8-GPU node
-#                                  simultaneously
+#  - 30s random startup stagger    reduces (does not remove) the cuInit
+#                                  race on 8-GPU nodes; see gpu_jobs.md
+#                                  for the flock warm-up
 #  - Excludes H100/H200 (sm_90 needs CUDA 12; CUDA 11.x envs can't use)
 #
-# Submit with array throttle to avoid NFS dogpile:
+# Submit (variables in sbatch's environment, NOT an --export list, which
+# triggers "user env retrieval failed requeued held"; see SKILL.md):
 #
-#   sbatch --array=1-100 --time=00:35:00 \
-#          --export=ALL,SUBJECT=2,MODEL=4,N_CHUNKS=10 \
+#   SUBJECT=2 MODEL=4 N_CHUNKS=10 sbatch --array=1-100 --time=00:35:00 \
 #          array_gpu_template.sh
 
 #SBATCH --job-name=gpu_array
@@ -33,9 +33,8 @@ mkdir -p "$TMPDIR"
 # If this job runs PyMC/pytensor (incl. --backend numpyro):
 # export PYTENSOR_FLAGS="base_compiledir=/scratch/$USER/pytensor/${SLURM_JOB_ID:-manual}_${SLURM_ARRAY_TASK_ID:-0}"
 
-# 30s random stagger — defuses cuInit race on multi-GPU nodes AND the
-# NFS profile-read dogpile (held-tasks issue). Critical when the array
-# is large; harmless when small.
+# Random stagger against the cuInit race on multi-GPU nodes (it has no
+# effect on env-retrieval holds: those happen before this script runs).
 sleep $(( RANDOM % 30 ))
 
 # Logging

@@ -1,6 +1,6 @@
 ---
 name: sciencecluster
-description: SLURM cluster (UZH sciencecluster) operational knowledge — including the fix for tasks stuck in "user env retrieval failed requeued held" (scripts/heal_env_holds.sh) — submitting jobs, conda activation in SLURM context, GPU constraints, log conventions, common failure modes (NFS dogpile, cuInit race, partition contention), and cluster-only vs local code paths. Use this skill whenever the user is working with sciencecluster, SLURM (sbatch, squeue, scontrol, sacct), conda envs on the cluster, GPU jobs with `--gres`, the user mentions "the cluster", or the working directory contains a `slurm_jobs/` folder. Also use for diagnosing held / failed / zombie SLURM jobs, and for copying data from a departmental SMB share (NAS) straight onto the cluster.
+description: SLURM cluster (UZH sciencecluster) operational knowledge — including the cause and fix of tasks stuck in "user env retrieval failed requeued held" (any `--export` LIST, also `--export=ALL,VAR=x`, triggers it; pass variables as `VAR=x sbatch ...` instead) — submitting jobs, conda activation in SLURM context, GPU constraints, log conventions, common failure modes (cuInit race, partition contention, quota/TMPDIR), and cluster-only vs local code paths. Use this skill whenever the user is working with sciencecluster, SLURM (sbatch, squeue, scontrol, sacct), conda envs on the cluster, GPU jobs with `--gres`, the user mentions "the cluster", or the working directory contains a `slurm_jobs/` folder. Also use for diagnosing held / failed / zombie SLURM jobs, and for copying data from a departmental SMB share (NAS) straight onto the cluster.
 ---
 
 # UZH sciencecluster — SLURM operational knowledge
@@ -18,30 +18,51 @@ Topical playbooks (apptainer, GPU jobs, cuInit race, exit codes,
 partition swap, …) live in `references/` and load on demand. If you
 hit a symptom that matches a reference title, read that file.
 
-## `user env retrieval failed requeued held` → run `scripts/heal_env_holds.sh`
+## `user env retrieval failed requeued held` → you passed an `--export` list
 
-Tasks pile up as `PD (user env retrieval failed requeued held)`? **Don't
-release by hand, run the healer** (on the login node; it only calls
-squeue / sacct / scontrol):
+**Cause (verified on sciencecluster 2026-11-02, slurm 25.05.4, from the slurm
+source and test jobs).** Any `--export` value other than exactly `ALL` (so
+`--export=VAR=x`, **`--export=ALL,VAR=x`**, `--export=NONE`) makes sbatch set
+`SLURM_GET_USER_ENV=1` (`src/sbatch/sbatch.c`: only the literal string `ALL`
+skips it). Before launch, slurmd then runs `su - $USER -c env` on the node; if
+that fails the task is requeued held with this reason. On this cluster it fails
+intermittently on a few nodes and within 1–5 s, so it is a node-side error,
+not a timeout from slow rc files or launch load. Over 2026-10-15…11-02,
+all ~2 400 held allocations came from submits with an `--export` list and
+none from plain submits, including plain jobs that ran on the same bad nodes
+minutes apart. (An earlier note here said `--export=ALL,VAR=x` avoids the
+retrieval. It does not: the job's own variables override the retrieved ones,
+so `PATH` looks like the submit shell's even though retrieval ran.)
+
+**Fix: do not pass an `--export` list.** Put variables in the environment of
+the `sbatch` call. The default (`--export=ALL`) passes them on and no
+retrieval happens:
 
 ```bash
-~/git/gilles-claude-skills/skills/sciencecluster/scripts/heal_env_holds.sh --dry-run   # look
-~/git/gilles-claude-skills/skills/sciencecluster/scripts/heal_env_holds.sh             # fix
+# held-prone:  sbatch --export=ALL,MODEL=m1,KIND=bar job.sh
+MODEL=m1 KIND=bar sbatch job.sh                  # same variables, no retrieval
+ssh sciencecluster 'cd ~/git/<project> && MODEL=m1 sbatch job.sh'   # remote
+MODEL=$m sb --array=1-30 job.sh                  # also through a bash function sb()
 ```
 
-It finds the nodes the launches failed on (a sick node that `sinfo` still
-calls `mixed` eats dozens of tasks in minutes; it is the usual cause),
-appends them to each held task's `ExcNodeList`, releases in waves of 25, and
-stops if a wave gets held again (then the cause is a bare `--export=VAR`
-list: resubmit with `--export=ALL,VAR=...`). Bad nodes go to
-`~/.slurm_bad_nodes`; pass them to new big arrays:
-`sbatch --exclude=$(cat ~/.slurm_bad_nodes) ...` (prune the file when the
-nodes are healthy again).
+(Positional script arguments, `sbatch job.sh m1 bar`, also work.) To check,
+print `${SLURM_GET_USER_ENV:-unset}` in the job script: `1` means retrieval ran.
 
-**Prevention: the healer runs every 15 min from `scrontab`**
-(`scripts/heal_env_holds.scrontab`; check with `scrontab -l`). If it is
-missing, install it as that file says. Background and the manual
-procedure: `references/array_throttling.md` § "Diagnose held tasks".
+**One side effect.** The retrieved login environment used to supply
+`MODULEPATH` and the `module` function. Without it, a job submitted from a
+non-interactive `ssh 'sbatch …'` has no `module` (verified). A script that
+calls `module load` needs `#!/bin/bash -l` (`references/script_shell_setup.md`).
+
+**Already held?** `scripts/heal_env_holds.sh [--dry-run]` (login node; only
+squeue/sacct/scontrol) excludes the nodes the launches failed on and releases
+in waves of 25. By hand: `scontrol update JobId=<id>
+ExcNodeList=<existing>,<node>` (keep existing exclusions), then `scontrol
+release <id>`. The healer is a safety net for old submit lines and can run
+from `scrontab` (`scripts/heal_env_holds.scrontab`); note that every normal
+scrontab cycle shows up as `REQUEUED` in `sacct`. It is not the fix; the
+submit line is. Throttling (`%N`), an in-script `sleep` stagger, or pacing
+`sbatch` calls do **not** help: retrieval happens in slurmd before the script
+starts, and the failures are fast node-side errors, not a timeout under load.
 
 ## Constants
 
@@ -125,7 +146,7 @@ Per-user placeholders (substitute from the project's CLAUDE.md):
 
 Copy-pasteable SLURM scaffolding lives in `references/`:
 
-- `array_cpu_template.sh` — CPU array job (stagger + logging + conda activation)
+- `array_cpu_template.sh` — CPU array job (logging + conda activation)
 - `array_gpu_template.sh` — same, plus `--gres=gpu:1`, GPU constraint, cuInit-race defense
 - `submit_chain.sh` — orchestrator that wires per-subject `afterok` chains
 
@@ -240,26 +261,10 @@ SLURM-aware specifics (driver placement, plugin quirks, recovery
 after a crashed driver). This skill and that one are designed to be
 read together.
 
-**7. Use `--export=ALL,VAR=...` (or no `--export`) — never a bare
-`--export=VAR=...` list.** A list WITHOUT `ALL` (and `--export=NONE`) makes
-SLURM implicitly run `--get-user-env` on the compute node (`su - $USER -c env`);
-when tens of tasks start together that retrieval times out and they land in
-`user env retrieval failed requeued held`. With `ALL` the job inherits the
-submitting shell's environment and **no retrieval happens**. Verified
-empirically 2026-10-19 (slurm 25.05): `--export=MODE=x` job had a fresh login
-`PATH`/`HOME` (retrieved); `--export=ALL,MODE=x` carried a submit-shell-only
-variable and no retrieval; every held array that day had been submitted with a
-bare list. `--export=NIL` also avoids retrieval but leaves `HOME` empty, which
-breaks scripts using `$HOME`. **Second cause — a sick node (verified
-2026-10-21):** jobs submitted *with* `--export=ALL` were held too, all 148 on
-ONE node (`u24-chaihm0-651`) that had started failing launches at 21:40 while
-still showing `mixed` in sinfo, so it kept eating jobs (1 s REQUEUED each).
-Diagnose: `sacct -u $USER -S <today> -D -X -n --format=State,NodeList%24 | sort
-| uniq -c` — requeues piling on one node = black-hole node. Fix: for each held
-job `scontrol update JobId=<id> ExcNodeList=<node>` then `scontrol release
-<id>`; **append** to an existing ExcNodeList, don't overwrite it. Held already? `scontrol release` them (recipe in
-`references/array_throttling.md`). (An earlier version of this rule said the
-opposite; it was wrong and caused the 2026-10 holds.)
+**7. Never pass an `--export` list** (not even `--export=ALL,VAR=x`): use
+`VAR=x sbatch job.sh`. Any list triggers `--get-user-env` on the node, and that
+is what lands tasks in `user env retrieval failed requeued held` (top of this
+file).
 
 ## Building conda envs: sbatch the build, but **no GPU node needed**
 
@@ -317,9 +322,7 @@ reading.
 - `references/debug_qos.md` — `--qos=debug` fast-lane smoke tests
   when fair-share has buried you
 - `references/array_throttling.md` — when NOT to throttle (usually);
-  `Reason=JobArrayTaskLimit` is your own `%N`, not the cluster; the
-  in-script stagger beats `%N`; releasing `user env retrieval failed
-  requeued held` tasks
+  `Reason=JobArrayTaskLimit` is your own `%N`, not the cluster
 - `references/idempotent_resubmit.md` — per-(unit, stage) `done()`
   predicates; stale-chunk pitfall with `chunk-NNNN-of-MMMM.npz`
 - `references/partition_swap.md` — `scontrol update Partition=` on PD

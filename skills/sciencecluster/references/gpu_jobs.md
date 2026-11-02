@@ -112,8 +112,7 @@ Properties: `/tmp` is node-local (NFS locks would be wrong); kernel
 releases `flock` on holder death (crash-safe); `-w 60` timeout
 prevents indefinite hangs.
 
-Keep a short random stagger (`sleep $((RANDOM % 15))`) separately
-for the **NFS dogpile** at task start — different race, unrelated
-to cuInit. `ArrayTaskThrottle` (see `array_throttling.md`) mitigates
-NFS dogpile but doesn't prevent cuInit races — 8 of 50 concurrent
-tasks can still land on the same node.
+`ArrayTaskThrottle` (see `array_throttling.md`) doesn't prevent cuInit
+races either — 8 of 50 concurrent tasks can still land on the same node.
+(Neither stagger nor throttle affects `user env retrieval failed` holds;
+see the top of `SKILL.md`.)

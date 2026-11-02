@@ -35,21 +35,20 @@ sb() { sbatch "$@" | awk '{print $4}'; }
 for sub in $SUBJECTS; do
     sp=$(printf "%02d" "$sub")
 
-    # Phase 1: chunks. Throttle starts with %20 to avoid NFS dogpile.
-    J_CHUNKS=$(sb --array=1-${N_CHUNKS}%20 --time=00:35:00 \
-        --export=ALL,SUBJECT=$sub,N_CHUNKS=$N_CHUNKS \
+    # Phase 1: chunks. Variables go in front of the call (VAR=x sb ...; bash
+    # passes them to sbatch inside the function), never as an --export list:
+    # that triggers "user env retrieval failed requeued held" (SKILL.md).
+    J_CHUNKS=$(SUBJECT=$sub N_CHUNKS=$N_CHUNKS sb --array=1-${N_CHUNKS} --time=00:35:00 \
         "$S_CHUNKS")
 
     # Phase 2: merge — waits for ALL phase1 tasks for this subject.
-    J_MERGE=$(sb --time=00:05:00 \
+    J_MERGE=$(SUBJECT=$sub sb --time=00:05:00 \
         --dependency=afterok:$J_CHUNKS \
-        --export=ALL,SUBJECT=$sub \
         "$S_MERGE")
 
     # Phase 3: downstream — fan out across ROIs once merge is done.
-    J_DOWN=$(sb --array=1-${N_ROIS} --time=00:25:00 \
+    J_DOWN=$(SUBJECT=$sub sb --array=1-${N_ROIS} --time=00:25:00 \
         --dependency=afterok:$J_MERGE \
-        --export=ALL,SUBJECT=$sub \
         "$S_DOWNSTREAM")
 
     echo "sub-${sp}: chunks=$J_CHUNKS merge=$J_MERGE downstream=$J_DOWN"
@@ -66,7 +65,7 @@ All chains submitted. Useful follow-ups:
   squeue --me -h -t PD --format='%i %r' | awk '/DependencyNeverSatisfied/ {print $1}' \
       | awk -F_ '{print $1}' | sort -u | xargs -r scancel
 
-  # Release tasks held with "user env retrieval failed" (NFS dogpile)
-  squeue --me -h -t PD --format='%i %r' | awk '/user env/ {print $1}' \
-      | xargs -r -I {} scontrol release {}
+  # Tasks held with "user env retrieval failed": exclude the bad node, release
+  # in waves (cause: an --export list; see SKILL.md)
+  ~/git/gilles-claude-skills/skills/sciencecluster/scripts/heal_env_holds.sh
 EOF

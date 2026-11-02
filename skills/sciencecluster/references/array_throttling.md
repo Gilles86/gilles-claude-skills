@@ -1,70 +1,37 @@
 # Throttling SLURM arrays — `%N` and `ArrayTaskThrottle`
 
-**When to load:** about to submit an array of ~100+ SHORT tasks; seeing
-`user env retrieval failed requeued held` on a freshly submitted array;
-or seeing `Reason=JobArrayTaskLimit` on pending tasks and wondering
-whose limit it is.
+**When to load:** about to add `%N` to an array; or seeing
+`Reason=JobArrayTaskLimit` on pending tasks and wondering whose limit it is.
 
-## Read this first: throttling buys you nothing after the tasks have started
+**Not for `user env retrieval failed requeued held`.** That hold comes from
+passing an `--export` list (also `--export=ALL,VAR=x`), and throttling, an
+in-script `sleep` stagger or pacing `sbatch` calls do nothing against it. See
+the top of `SKILL.md`.
 
-The only problem `%N` solves is a **startup** problem. Many tasks
-dispatching in the same second dogpile NFS reading each task's
-`$HOME/.bashrc` / `~/.zshrc`; some then fail with `user env retrieval
-failed requeued held` and sit held until released. That is a burst at
-`t = 0`, over within a minute or two.
+## Semantics
 
-`ArrayTaskThrottle`, though, caps concurrently **running** tasks for the
-array's whole life. So it pays a cost proportional to the job's WALLTIME
-to fix a problem that lives in the first two minutes. On an array of long
-jobs that trade is terrible:
+`ArrayTaskThrottle=N` (`--array=1-300%N`) caps the number of the array's tasks
+that **run at the same time**, for the array's whole life. It is not a start-rate
+limit; SLURM has no knob that only spreads out starts.
+
+So it costs wallclock in proportion to the tasks' walltime:
 
     14 tasks x 8 h each, %10  ->  two waves, ~16 h wallclock
     14 tasks x 8 h each, no %  ->  one wave,  ~8 h wallclock
 
-A whole day lost, on a cluster that had 2 100 idle cores. **Match the knob
-to the problem: stagger the starts, don't cap the concurrency.**
-
-## Prefer the in-script stagger
-
-`array_cpu_template.sh` / `array_gpu_template.sh` already carry
-
-```bash
-sleep $(( RANDOM % 30 ))
-```
-
-before anything touches `$HOME`. That spreads the env-retrieval burst over
-30 s at zero wallclock cost and makes `%N` unnecessary for almost every
-array these templates run. **If the script staggers, do not also throttle.**
-Widen the stagger (`% 60`, `% 120`) before reaching for `%N`.
-
 ## When a throttle IS right
 
-- Arrays of **hundreds of short tasks** (minutes each), where the wallclock
-  cost of capping concurrency is small and the dispatch burst is large.
-- You are **deliberately being a good citizen** on a busy partition — but
-  check `sinfo` first (below); usually there is plenty idle and the polite
-  gesture only slows you down.
 - A per-task resource that genuinely does not parallelise: one licence, one
-  writable scratch dir, an external API with a rate limit.
+  writable scratch dir, an external API with a rate limit, a shared output
+  file.
+- Hundreds of short tasks (minutes each) that all read the same large files
+  from a network share at start-up, where the wallclock cost is small.
+- Deliberately leaving room on a busy partition (check `sinfo` first; usually
+  there is plenty idle).
 
-## When it is NOT
-
-- **Long jobs.** Anything over ~1 h per task: the wave structure dominates.
-- **Small arrays** (under ~30 tasks). Under the dogpile threshold anyway.
-- **Arrays that already stagger in-script.** Belt and braces, all cost.
-- **"To be safe."** A throttle is not free and not neutral; it is a wallclock
-  tax. Justify it or leave it off.
-
-## Defaults
-
-- **No throttle** — the default. Arrays under ~100 tasks, or any array whose
-  tasks stagger in-script.
-- `%100` — arrays of many hundreds of short tasks without an in-script stagger.
-- `%50` — only when something genuinely serialises (a lock, a licence, an API).
-
-(These are looser than they used to be. The old `%50`-for-50-tasks advice was
-written from one bad dogpile day and cost far more wallclock than it ever
-saved.)
+Otherwise: **no throttle.** Long tasks, small arrays and "to be safe" are not
+reasons. For the GPU cuInit race use the `flock` warm-up in
+`references/gpu_jobs.md`, not `%N`.
 
 ## `Reason=JobArrayTaskLimit` is almost always self-inflicted
 
@@ -103,69 +70,3 @@ On sciencecluster (checked 2026-09-09) `MaxArraySize=50000`,
 either account — so **every `JobArrayTaskLimit` you see there is your own**.
 Other reasons that are NOT yours: `AssocMaxJobsLimit`, `QOSMaxJobsPerUserLimit`,
 `Resources`, `Priority`.
-
-## A bare `--export=VAR` list triggers env retrieval — use `ALL,VAR`
-
-`user env retrieval failed requeued held` only happens when SLURM runs
-`--get-user-env` on the compute node. `--export=VAR=x` (a list without `ALL`)
-and `--export=NONE` turn that on **implicitly**; `--export=ALL,VAR=x` and the
-default (no `--export`) do not — the job inherits the submitting shell's env.
-
-Verified on sciencecluster 2026-10-19 (slurm 25.05.4) with one tiny job per mode:
-
-| Submitted with | Submit-shell-only var | HOME / PATH in job | Env retrieved? |
-|---|---|---|---|
-| `--export=MODE=x` | absent | login `PATH` (`/snap/bin`, games) | **yes** |
-| `--export=ALL,MODE=x` | present | submit shell's `PATH` | no |
-| `--export=NIL` | absent | `HOME` empty, minimal `PATH` | no (but `$HOME` breaks) |
-
-Every array held on 2026-10-19 (40 tasks across 11 arrays) had been
-submitted with a bare list (`--export=MIN_CVR2=0.05`, `--export=DATASET=value2`, …).
-An earlier version of this section claimed the reverse (that `ALL` triggers
-retrieval); that was a misattribution.
-
-```bash
-# fragile: implicit --get-user-env on every task
-sbatch --array=1-19 --export=NVOX=100,TAG=nvox100 job.sh
-
-# robust: no retrieval; the job inherits this shell's env plus the two vars
-sbatch --array=1-19 --export=ALL,NVOX=100,TAG=nvox100 job.sh
-```
-
-Using `ALL,VAR` is a better fix than throttling — it removes the cause instead
-of spreading it out, and costs no wallclock. Side effect to know: with `ALL`
-the job sees whatever the submitting shell had (a stray `PYTHONPATH`, an
-activated conda env). Job scripts that set their own interpreter path
-(`exec <env>/bin/python`) are unaffected.
-
-## Semantics
-
-`ArrayTaskThrottle=N` caps concurrent *running* tasks, not the dispatch rate.
-With `%50`, at most 50 of the array's tasks run in parallel; the rest stay PD
-until a slot frees. There is no SLURM knob that limits only the start rate —
-which is exactly why the in-script `sleep` is the better tool.
-
-## Releasing held tasks
-
-```bash
-squeue --me -h -t PD --format='%i %r' \
-  | awk '/user env/ {print $1}' \
-  | xargs -I {} scontrol release {}
-```
-
-Or in one call:
-
-```bash
-scontrol release $(squeue -u $USER -h -r -t PD -o "%i %R" \
-    | grep -i held | awk '{print $1}' | paste -sd, -)
-```
-
-Check with `squeue -u $USER -h -r -t PD -o "%R" | sort | uniq -c`: the reason
-should change from `(... held)` to `(Priority)`.
-
-## Cross-array dogpile
-
-Across many parallel arrays the dogpile is global (NFS reads from `$HOME`
-regardless of which array). If held tasks keep appearing even with
-`--export=ALL,...`, put `sleep 30` between your `sbatch` calls rather than
-throttling each array.

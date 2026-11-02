@@ -4,14 +4,13 @@
 # Designed for embarrassingly-parallel per-(subject, chunk) fits where
 # each task runs ~10-30 min on CPU. Submit with:
 #
-#   sbatch --array=1-300 --time=00:30:00 \
-#          --export=SUBJECT=2,MODEL=4,N_CHUNKS=40 \
+#   SUBJECT=2 MODEL=4 N_CHUNKS=40 sbatch --array=1-300 --time=00:30:00 \
 #          array_cpu_template.sh
 #
-# Do NOT add %N unless you have a reason. This script already staggers
-# its own start (see the sleep below), which is what the dogpile actually
-# needs; %N instead caps concurrency for the job's whole life and costs
-# wallclock proportional to --time. See references/array_throttling.md.
+# Pass variables in sbatch's environment as above, NOT as an --export list
+# (even --export=ALL,VAR=x triggers get-user-env -> "user env retrieval
+# failed requeued held"; see SKILL.md). No %N unless you have a reason:
+# see references/array_throttling.md.
 
 #SBATCH --job-name=cpu_array
 #SBATCH --account=<your-account>
@@ -32,16 +31,12 @@ mkdir -p "$TMPDIR"
 # If this job runs PyMC/pytensor (incl. --backend numpyro):
 # export PYTENSOR_FLAGS="base_compiledir=/scratch/$USER/pytensor/${SLURM_JOB_ID:-manual}_${SLURM_ARRAY_TASK_ID:-0}"          # NO -u: conda activate trips on it.
 
-# Stagger start to avoid NFS dogpile when many tasks dispatch
-# simultaneously (env retrieval from $HOME/.bashrc).
-sleep $(( RANDOM % 30 ))
-
 # --- Logging: one file per task under ~/logs/ ---
 LOGFILE="$HOME/logs/${SLURM_JOB_NAME:-job}_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID:-0}.txt"
 mkdir -p "$(dirname "$LOGFILE")"
 exec >"$LOGFILE" 2>&1
 
-# --- Required env vars (passed via --export=ALL,VAR=...) ---
+# --- Required env vars (set as VAR=x in front of sbatch) ---
 if [[ -z "${SUBJECT:-}" || -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then
     echo "ERROR: SUBJECT + SLURM_ARRAY_TASK_ID required." >&2
     exit 2

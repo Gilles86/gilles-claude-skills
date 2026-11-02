@@ -235,12 +235,13 @@ modeling/
     └── decode.sh
 ```
 
-One `.sh` wraps **one** `.py` script. Inputs go via `--export key=value`,
-not positional args. Naming: `<analysis>[_<variant>].sh` (e.g.,
+One `.sh` wraps **one** `.py` script. Inputs are environment variables set
+on the call (`KEY=value sbatch job.sh`; never an `--export` list, which causes
+`user env retrieval failed` holds, see **sciencecluster**), not positional args. Naming: `<analysis>[_<variant>].sh` (e.g.,
 `fit_aprf.sh`, `fit_aprf_cv.sh`). Avoid `submit.sh`, `run.sh`, `job1.sh`.
 
 Real exemplar: [references/slurm_job_example.sh](references/slurm_job_example.sh)
-— shows the `--export` pattern, dynamic `ARGS=(...)` array,
+— shows the env-variable input pattern, dynamic `ARGS=(...)` array,
 `PYTHONUNBUFFERED=1` + direct env binary, log redirection.
 
 The internals (account, conda activation, GPU constraints, log paths,

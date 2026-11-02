@@ -5,15 +5,19 @@
 #   heal_env_holds.sh            # fix + release
 #   heal_env_holds.sh --dry-run  # only report
 #
+# This is a safety net, not the fix. The hold only happens to jobs submitted
+# with an --export LIST (--export=VAR=x, --export=ALL,VAR=x, --export=NONE):
+# sbatch then sets SLURM_GET_USER_ENV=1 and slurmd runs `su - $USER` on the
+# node before launch; on some nodes that fails within seconds. Submit with
+# `VAR=x sbatch ...` (default --export=ALL) and the hold cannot occur.
+# See SKILL.md, section "user env retrieval failed requeued held".
+#
 # Safe to run any time (login node or scrontab): it only touches held tasks
-# with that reason. Two causes, both handled:
-#   - sick node: launches fail on one or two nodes that sinfo still calls
-#     "mixed". Every node with >= BAD_MIN requeues of your jobs in the last
-#     LOOKBACK, plus the nodes each task itself failed on, is appended to the
-#     task's ExcNodeList (existing exclusions kept) before release.
-#   - bare --export=VAR list (implicit --get-user-env): releasing works; fix
-#     the submit line to --export=ALL,VAR=... so it does not recur.
-# Bad nodes are also written to ~/.slurm_bad_nodes, for `sbatch --exclude=$(cat ~/.slurm_bad_nodes)`.
+# with that reason. Every node with >= BAD_MIN env-launch requeues of your
+# jobs in the last LOOKBACK, plus the nodes each task itself failed on, is
+# appended to the task's ExcNodeList (existing exclusions kept) before release.
+# scrontab jobs (empty SubmitLine) are ignored: they show REQUEUED after every
+# normal cron cycle. Bad nodes also go to ~/.slurm_bad_nodes.
 set -uo pipefail
 DRY=0
 [[ "${1:-}" == "-n" || "${1:-}" == "--dry-run" ]] && DRY=1
@@ -34,8 +38,9 @@ fi
 log "${#held[@]} env-retrieval held task(s)"
 
 # nodes with repeated launch failures for this user
-mapfile -t bad < <(sacct -u "$USER" -S "$LOOKBACK" -D -X -n -P -o State,NodeList \
-    | awk -F'|' '$1 ~ /REQUEUED|NODE_FAIL|LAUNCH_FAILED/ && $2 != "None assigned" {print $2}' \
+# (SubmitLine last: it can contain '|'; empty SubmitLine = scrontab cron cycle)
+mapfile -t bad < <(sacct -u "$USER" -S "$LOOKBACK" -D -X -n -P -o State,NodeList,SubmitLine \
+    | awk -F'|' '$1 ~ /REQUEUED|NODE_FAIL|LAUNCH_FAILED/ && $2 != "None assigned" && $3 != "" {print $2}' \
     | while read -r nl; do expand "$nl"; done \
     | sort | uniq -c | awk -v m="$BAD_MIN" '$1 >= m {print $2}')
 log "bad nodes (>= $BAD_MIN requeues since $LOOKBACK): ${bad[*]:-none}"
@@ -68,7 +73,7 @@ for ((i = 0; i < ${#ready[@]}; i += WAVE)); do
     again=$(squeue --me -h -t PD -r -o '%i|%r' | awk -F'|' 'tolower($2) ~ /env.retrieval/' \
         | grep -cFf <(printf '%s|\n' "${wave[@]}") || true)
     if (( again * 2 > ${#wave[@]} )); then
-        log "STOP: $again of the last wave were held again; the cause is not a node. Check the submit line's --export."
+        log "STOP: $again of the last wave were held again on other nodes. Resubmit without an --export list (VAR=x sbatch ...)."
         exit 1
     fi
 done

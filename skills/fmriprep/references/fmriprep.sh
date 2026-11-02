@@ -9,12 +9,13 @@
 #     sbatch --array=1-30 fmriprep.sh        # -> labels 001, 002, ..., 030
 #
 #   Any subject by name (single job, overrides the array):
-#     sbatch --export=PARTICIPANT_LABEL=pil02 fmriprep.sh
+#     PARTICIPANT_LABEL=pil02 sbatch fmriprep.sh
 #
 # Force a different BOLD2ANAT init (default fmriprep `auto` picks T2w when
 # present, which has historically given bad registration with our
 # cross-session T2w acquisitions — see SKILL.md "--bold2anat-init"):
-#     sbatch --export=ALL,BOLD2ANAT_INIT=t1w --array=1-30 fmriprep.sh
+#     BOLD2ANAT_INIT=t1w sbatch --array=1-30 fmriprep.sh
+#   (Never an --export list: it causes "user env retrieval failed" holds.)
 #
 #SBATCH --job-name=fmriprep_<project>
 #SBATCH --output=/home/gdehol/logs/<project>_fmriprep_%A-%a.txt
