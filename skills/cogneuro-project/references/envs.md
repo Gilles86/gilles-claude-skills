@@ -53,13 +53,13 @@ survives `module load cuda/...` renames on the cluster.
 
 Older TF 2.14 + Keras 2 envs (`tf2-gpu` and similar) still work for
 projects that haven't migrated, but **cannot** import braincoder from
-the `keras-backend` branch (it uses `from keras import ops`, a Keras 3
+any release since 0.5 (it uses `from keras import ops`, a Keras 3
 API). When a project upgrades, it commits to Keras 3 across all envs
 simultaneously.
 
 ## Real env exemplars
 
 - [environment_cuda.yml](environment_cuda.yml) — abstract_values cluster
-  stack (TF 2.20 + jax[cuda12] + braincoder@keras-backend + GLMsingle)
+  stack (TF 2.20 + jax[cuda12] + braincoder v0.6.2 + GLMsingle)
 - [environment_apple_silicon.yml](environment_apple_silicon.yml) — same
   versions for Mac M-series, with optional `tensorflow-metal` for GPU

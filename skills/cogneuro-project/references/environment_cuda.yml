@@ -6,14 +6,14 @@
 #
 # What to study:
 #   * Python 3.11 + Keras 3.13.2 + TF 2.20 + jax[cuda12] + torch — the
-#     multi-backend stack braincoder's keras-backend branch is built for.
+#     multi-backend stack braincoder is built for.
 #   * `tensorflow==2.20.0` brings its own CUDA libs via pip wheels; no
 #     `module load cuda/...` needed on the cluster.
 #   * `jax[cuda12]` adds GPU-accelerated JAX; the package extra installs the
 #     matching jaxlib + nvidia-* wheels.
 #   * `torch` is CPU here — swap to `torch+cu121 --extra-index-url ...` if
 #     you want GPU torch too.
-#   * braincoder is pinned to the `keras-backend` branch via git URL.
+#   * braincoder is pinned to a release tag via git URL.
 #     For dev iteration, do `pip install -e libs/braincoder` post-build to
 #     shadow this with the local submodule.
 #   * `GLMsingle` is pip-from-git (not on PyPI).
@@ -59,8 +59,8 @@ dependencies:
       - jax[cuda12]           # GPU-accelerated JAX on cluster (CUDA 12)
       - torch                 # PyTorch (CPU; add torch+cu121 for GPU)
       - keras==3.13.2
-      # Braincoder (keras-backend branch)
-      - git+https://github.com/Gilles86/braincoder.git@keras-backend
+      # Braincoder (pinned release)
+      - git+https://github.com/Gilles86/braincoder.git@v0.6.2
       # fMRI analysis
       - git+https://github.com/cvnlab/GLMsingle.git
       - pybids

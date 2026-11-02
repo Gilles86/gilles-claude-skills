@@ -13,7 +13,7 @@
 #   * `jax` and `torch` are CPU-only here. The pattern is: do PRF dev on
 #     local M1/M2 (CPU is plenty fast for a few hundred voxels) and ship
 #     full-brain fits to the cluster.
-#   * Same Keras 3.13.2 + braincoder@keras-backend branch as the cluster env
+#   * Same Keras 3.13.2 + braincoder v0.6.2 branch as the cluster env
 #     so the same model code runs locally and remotely.
 #   * `glmsingle` is from PyPI here (the package is named differently than
 #     the upstream repo's `GLMsingle`).
@@ -48,8 +48,8 @@ dependencies:
       - jax
       - torch
       - keras==3.13.2
-      # Braincoder (keras-backend branch)
-      - git+https://github.com/Gilles86/braincoder.git@keras-backend
+      # Braincoder (pinned release)
+      - git+https://github.com/Gilles86/braincoder.git@v0.6.2
       # fMRI analysis
       - glmsingle
       - neuropythy

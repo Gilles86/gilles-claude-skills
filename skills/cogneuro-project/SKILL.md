@@ -257,7 +257,7 @@ pip-installed packages from git URLs in the env YML.
   what runtime imports use:
   ```yaml
   - pip:
-    - "braincoder @ git+https://github.com/Gilles86/braincoder.git@keras-backend"
+    - "braincoder @ git+https://github.com/Gilles86/braincoder.git@v0.6.2"
   ```
 - **The submodule is for editable development.** After building the
   env, override the pinned install:
@@ -341,7 +341,8 @@ library root — untracked so a checkout cannot remove it.
 The three libraries:
 
 - **braincoder** — PRF / encoding-model fitting (Keras 3
-  multi-backend). Lives in `<package>/modeling/`. Real fit example:
+  multi-backend). Read the **braincoder** skill first: manual, traps,
+  decoding, runtimes. Lives in `<package>/modeling/`. Real fit example:
   [references/braincoder_prf_example.py](references/braincoder_prf_example.py)
   shows the canonical 3-stage fit (`fit_grid` →
   `refine_baseline_and_amplitude` → `fit`). **Never skip the refine
