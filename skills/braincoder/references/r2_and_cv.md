@@ -50,11 +50,29 @@ without any voxel selection:
   their scale is large. Compute the shares before blaming the optimizer.
 - The raw mean falls with SD: median 947 for SD ≤ 3, 170 for SD > 10 (mask median 777).
 
-**Rule:** report the top-1 and top-10 share of `Σ SST` for every subject × ROI. Exclude
-extreme voxels using a criterion that doesn't depend on any model (SD of the BOLD, or better,
-the raw mean before scaling), and show that the conclusion survives more than one cutoff.
-Selecting signal voxels doesn't solve it: in a set of at most 500 reliable voxels per ROI,
-one voxel still held a median of 5.7% and up to 67% of the variance.
+**High variance alone doesn't make a voxel bad.** Tabulate fit quality and cross-run
+reliability by SD before choosing a cutoff. In about 111,000 selected voxels from 30 subjects:
+
+| Voxel SD (% signal) | Voxels | Share of variance | Median R² | Median cross-run R² | Reliable |
+|---|---:|---:|---:|---:|---:|
+| ≤ 1 | 17,801 | 1.6% | .055 | −.050 | 27% |
+| 1–2 | 65,703 | 16.6% | .092 | −.011 | 47% |
+| 2–3 | 17,243 | 12.1% | .187 | +.109 | 65% |
+| 3–5 | 7,659 | 13.2% | .246 | +.172 | 67% |
+| 5–10 | 2,412 | 12.9% | .281 | +.193 | 67% |
+| 10–20 | 357 | 7.8% | .269 | +.177 | 65% |
+| 20–50 | 40 | 3.8% | .124 | −.093 | 43% |
+| > 50 | 13 | 31.9% | .069 | −5.2 | 0% |
+
+Voxels up to about 20% have the *best* signal, so a tight cutoff removes good data. A cutoff
+of 5% or 3% weakened one term in the example; a cutoff of 20%, which removes only the
+unreliable tail, did not. Here 53 of about 111,000 voxels held 36% of the variance.
+
+**Rule:** report the top-1 and top-10 share of `Σ SST` for every subject × ROI. Exclude only
+voxels that are both extreme and irreproducible, using a criterion that doesn't depend on any
+encoding model, and show that the conclusion survives more than one cutoff. Selecting voxels
+by a fit-based score doesn't solve it: in a set of at most 500 voxels per ROI, one voxel still
+held a median of 5.7% and up to 67% of the variance.
 
 **Shared parameters are exposed too.** Per-voxel parameters are independent, so these voxels
 only distort the summary. A parameter shared across voxels (a modulation width or gain) is
