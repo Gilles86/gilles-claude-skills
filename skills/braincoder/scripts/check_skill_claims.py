@@ -216,6 +216,50 @@ def transforms_round_trip():
 
 claim('Models reference: DoG and DN flexible-HRF transforms round-trip', transforms_round_trip)
 
+
+def _prf_setup():
+    g = np.linspace(-5, 5, 21)
+    grid = np.stack(np.meshgrid(g, g), -1).reshape(-1, 2).astype(np.float32)
+    s = (np.random.default_rng(1).random((12, len(grid))) > .6).astype(np.float32)
+    return grid, s, (g[1] - g[0]) ** 2
+
+
+def rf_normalization_is_reparameterisation():
+    grid, s, area = _prf_setup()
+    sd = np.array([.7, 1.5, 3.], np.float32)
+    base = dict(x=[1., -1., 0.], y=[0., 2., -1.], sd=sd, baseline=[0., .2, -.1])
+    scale = {'legacy': area / (sd * np.sqrt(2 * np.pi)), 'peak': np.ones(3), 'area': area / (2 * np.pi * sd ** 2)}
+    preds = []
+    for norm, w in scale.items():
+        pars = pd.DataFrame({**base, 'amplitude': 2. / w}).astype(np.float32)
+        m = GaussianPRF2D(grid_coordinates=grid, paradigm=s, rf_normalization=norm)
+        preds.append(np.asarray(m.predict(paradigm=s, parameters=pars[m.parameter_labels])))
+    return all(np.allclose(p, preds[0], rtol=1e-3, atol=1e-4) for p in preds[1:])
+
+
+claim("Models reference: 'legacy', 'peak' and 'area' predict the same after converting amplitude",
+      rf_normalization_is_reparameterisation)
+
+
+def plain_dn(rf_amplitude):
+    """Max |prediction - (A<S,G1> + B) / (C<S,G2> + D)|, with the signed C of `main`."""
+    from braincoder.models import DivisiveNormalizationGaussianPRF2D
+    grid, s, _ = _prf_setup()
+    sd, size, srf, b, d = .8, 2.5, .1, .6, 1.3
+    p = pd.DataFrame(dict(x=[1.], y=[0.], sd=[sd], rf_amplitude=[rf_amplitude], srf_amplitude=[srf], srf_size=[size],
+                          neural_baseline=[b], surround_baseline=[d])).astype(np.float32)
+    m = DivisiveNormalizationGaussianPRF2D(grid_coordinates=grid, paradigm=s, rf_normalization='peak')
+    got = np.asarray(m.predict(paradigm=s, parameters=p[m.parameter_labels]))[:, 0]
+    r2 = ((grid - [1., 0.]) ** 2).sum(1)
+    g1, g2 = s @ np.exp(-r2 / (2 * sd ** 2)), s @ np.exp(-r2 / (2 * (sd * size) ** 2))
+    return np.abs(got - (rf_amplitude * g1 + b) / (srf * rf_amplitude * g2 + d)).max()
+
+
+claim("Models reference: plain DN with 'peak' is (A<S,G1> + B) / (C<S,G2> + D), without -B/D",
+      lambda: plain_dn(.2) < 1e-3)
+claim('Models reference: on main, a negative rf_amplitude also lowers the DN denominator (signed C)',
+      lambda: plain_dn(-.2) < 1e-3)
+
 # ---- custom model template -------------------------------------------------
 class SigmoidModel(EncodingModel):
     parameter_labels = ['x0', 'slope', 'amplitude', 'baseline']

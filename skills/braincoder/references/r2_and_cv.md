@@ -29,9 +29,37 @@ metric in advance, report it with the percentage of subjects, and treat a sign f
 warning that a few voxels drive the result. Use pooled when comparing models, since it
 matches the loss.
 
-Also report a robust summary. A pooled test R² can fall below that of a simpler model while
-the median voxel rises, when a handful of voxels run away (seen on an all-voxel ROI fit:
-Gaussian → DoG, median 0.0101 → 0.0137, pooled 0.0070 → −0.0024). Inspect those voxels.
+### Pooled R² can be set by a handful of voxels: check first
+
+Percent-signal-change scaling divides by each voxel's mean, so voxels with a very low raw
+mean (mask edge, signal dropout) can have enormous variance. Pooled R² then describes those
+voxels and nothing else. One subject, 9,894 voxels in visual and parietal ROIs, all fitted
+without any voxel selection:
+
+| Voxels kept (by test SD of the BOLD, % signal) | n | Gaussian | DoG | Gaussian + flex HRF | DoG + flex HRF |
+|---|---:|---:|---:|---:|---:|
+| All | 9,894 | +0.0070 | **−0.0024** | +0.0068 | **−0.0027** |
+| SD ≤ 20 (drops the 10 largest) | 9,884 | +0.1022 | +0.1040 | +0.1067 | +0.1092 |
+| SD ≤ 6.6 (99th percentile) | 9,795 | +0.1106 | +0.1136 | +0.1151 | +0.1189 |
+| Median voxel, all | 9,894 | +0.0101 | +0.0137 | +0.0113 | +0.0165 |
+
+- The top voxel held 51% of the total test variance and the top 10 held 90% (median voxel SD
+  1.1%, largest 418%). Removing the 10 voxels turned a negative R² into 0.10 and restored the
+  expected ordering.
+- This looks like runaway parameters and is not: those voxels' amplitudes are large because
+  their scale is large. Compute the shares before blaming the optimizer.
+- The raw mean falls with SD: median 947 for SD ≤ 3, 170 for SD > 10 (mask median 777).
+
+**Rule:** report the top-1 and top-10 share of `Σ SST` for every subject × ROI. Exclude
+extreme voxels using a criterion that doesn't depend on any model (SD of the BOLD, or better,
+the raw mean before scaling), and show that the conclusion survives more than one cutoff.
+Selecting signal voxels doesn't solve it: in a set of at most 500 reliable voxels per ROI,
+one voxel still held a median of 5.7% and up to 67% of the variance.
+
+**Shared parameters are exposed too.** Per-voxel parameters are independent, so these voxels
+only distort the summary. A parameter shared across voxels (a modulation width or gain) is
+fitted to summed squared error, so such voxels can dominate its fit. Screen them before
+fitting shared-parameter models.
 
 ## Restrict the comparison to voxels with signal
 
@@ -113,7 +141,10 @@ fit. Report it as such, with the effect size. In the example it was about 10⁻�
 
 ## Quick reference
 
-- `r2 == 1.0` exactly: phantom, not a good fit. See `SKILL.md`.
+- `r2 == 1.0` exactly: phantom from mismatched indices, not a good fit. `get_rsq` raises on
+  this since 0.6.2, so recompute any cvR² from older code. See `SKILL.md`.
+- `r2 == -1000` or all-zero parameters (before 0.6.2), NaN (since 0.6.2): the voxel has a NaN
+  sample or zero variance. Drop these before aggregating, and count how many you dropped.
 - Clipping at −1 hides how bad a voxel is. Fine for a map, not for aggregation.
 - In-sample R² always favours the more flexible model. Never compare models on it, and
   beware "signal voxel count at FDR" between models: it compares thresholds, not prediction.
