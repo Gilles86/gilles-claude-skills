@@ -3,7 +3,7 @@
 #
 # Key differences from the CPU template:
 #  - --gres=gpu:1                  request one GPU
-#  - --constraint="L4|V100|A100"   tolerate any of these GPU types
+#  - --constraint="L4|A100"   tolerate any of these GPU types
 #  - 30s random startup stagger    reduces (does not remove) the cuInit
 #                                  race on 8-GPU nodes; see gpu_jobs.md
 #                                  for the flock warm-up
@@ -20,7 +20,7 @@
 #SBATCH --partition=standard
 #SBATCH --output=/dev/null
 #SBATCH --gres=gpu:1
-#SBATCH --constraint="L4|V100|A100"
+#SBATCH --constraint="L4|A100"
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=24G
 

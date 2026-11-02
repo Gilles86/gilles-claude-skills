@@ -54,7 +54,7 @@ python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU')
 
 ## GPU constraint syntax
 
-`#SBATCH --constraint="L4|V100|A100"` accepts any of those GPU types.
+`#SBATCH --constraint="L4|A100"` accepts any of those GPU types.
 Useful when L4 alone gives long queue waits. **Exclude H100/H200 if
 the env is on CUDA 11.x** (sm_90 needs CUDA 12).
 
@@ -83,7 +83,7 @@ bottleneck — same hardware, faster dispatch.
 ## cuInit race on multi-GPU nodes
 
 Multiple jobs landing simultaneously on the same multi-GPU node
-(8-GPU V100 / A100 / H100 boxes) issue parallel `cuInit` calls that
+(8-GPU A100 / H100 boxes) issue parallel `cuInit` calls that
 deadlock the NVIDIA driver. TF silently falls back to CPU → ~25×
 slowdown → walltime timeouts → cascading `DependencyNeverSatisfied`.
 

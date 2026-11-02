@@ -72,7 +72,7 @@ starts, and the failures are fast node-side errors, not a timeout under load.
 | Login host | `cluster.s3it.uzh.ch` |
 | Partitions | `lowprio` (fast dispatch, **preemptable**), `standard` (fairshare) |
 | QoSes | `debug` (4 min, MaxJobsPU=1, +prio), `normal` (1 day, default), `medium` (2 day, `standard` only), `long` (7 day, MaxJobsPU=24) |
-| GPU types | L4 (1/node, no cuInit race), V100 (8/node), A100 (8/node), H100/H200 (CUDA 12, exclude when env is on CUDA 11) |
+| GPU types | L4 (1/node, no cuInit race), A100 (8/node), H100/H200 (CUDA 12, exclude when env is on CUDA 11). No V100 any more (checked 2026-11-02 with `sinfo -o "%f"`): a constraint naming V100 fails with "Invalid feature specification". |
 | Shared data root | `/shares/<account>/` (per-account; group-owned share) |
 
 > **Partition convention** (not enforced by policy): reserve `lowprio`
