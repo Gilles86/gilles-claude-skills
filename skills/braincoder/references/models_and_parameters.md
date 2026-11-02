@@ -16,14 +16,14 @@ braincoder's DN parameters map onto Aqil's as follows, with `w(σ)` the scale fa
 |---|---|
 | A | `rf_amplitude · w(sd)` |
 | B | `neural_baseline` |
-| C | `srf_amplitude · rf_amplitude · w(sd · srf_size)` (`|rf_amplitude|` on the TF line) |
+| C | `srf_amplitude · \|rf_amplitude\| · w(sd · srf_size)` |
 | D | `surround_baseline` |
 | σ1, σ2 | `sd`, `sd · srf_size` |
 
 Verified numerically on 2026-11-02: braincoder's DN equals the prfpy equation to float32 precision (max difference 2 × 10⁻⁷) for positive `rf_amplitude`. Two details differ by class and line (re-tested on 0.6.2):
 
 - **`−B/D`:** the `*WithHRF` classes subtract it before convolution. The plain `DivisiveNormalizationGaussianPRF2D` returns `(A⟨S,G1⟩ + B) / (C⟨S,G2⟩ + D)`, so its rest level is `B/D`, not 0.
-- **Negative `rf_amplitude`:** `rf_amplitude` has no positivity constraint. The pre-Keras TF line uses `C = srf_amplitude · |rf_amplitude| · w`, so the denominator stays positive. `main` (0.6.2) uses `C = srf_amplitude · rf_amplitude · w`, so a negative amplitude lowers the denominator and can drive it through zero. The two lines give different predictions for such voxels, so check for negative amplitudes in DN fits on `main`.
+- **Negative `rf_amplitude`:** `rf_amplitude` has no positivity constraint. The denominator uses `|rf_amplitude|`, so it stays positive and negative pRFs are safe. Keras-line versions **before 0.6.2** used the signed amplitude: a negative amplitude lowered the denominator and could drive it through zero. Refit DN models from those versions if negative amplitudes occurred.
 
 ## `rf_normalization` (v0.6.1)
 

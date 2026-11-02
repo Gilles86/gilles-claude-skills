@@ -242,7 +242,7 @@ claim("Models reference: 'legacy', 'peak' and 'area' predict the same after conv
 
 
 def plain_dn(rf_amplitude):
-    """Max |prediction - (A<S,G1> + B) / (C<S,G2> + D)|, with the signed C of `main`."""
+    """Max |prediction - (A<S,G1> + B) / (C<S,G2> + D)|, with C using |rf_amplitude|."""
     from braincoder.models import DivisiveNormalizationGaussianPRF2D
     grid, s, _ = _prf_setup()
     sd, size, srf, b, d = .8, 2.5, .1, .6, 1.3
@@ -252,12 +252,12 @@ def plain_dn(rf_amplitude):
     got = np.asarray(m.predict(paradigm=s, parameters=p[m.parameter_labels]))[:, 0]
     r2 = ((grid - [1., 0.]) ** 2).sum(1)
     g1, g2 = s @ np.exp(-r2 / (2 * sd ** 2)), s @ np.exp(-r2 / (2 * (sd * size) ** 2))
-    return np.abs(got - (rf_amplitude * g1 + b) / (srf * rf_amplitude * g2 + d)).max()
+    return np.abs(got - (rf_amplitude * g1 + b) / (srf * abs(rf_amplitude) * g2 + d)).max()
 
 
 claim("Models reference: plain DN with 'peak' is (A<S,G1> + B) / (C<S,G2> + D), without -B/D",
       lambda: plain_dn(.2) < 1e-3)
-claim('Models reference: on main, a negative rf_amplitude also lowers the DN denominator (signed C)',
+claim('Models reference: a negative rf_amplitude leaves the DN denominator positive (|A| in C)',
       lambda: plain_dn(-.2) < 1e-3)
 
 # ---- custom model template -------------------------------------------------
